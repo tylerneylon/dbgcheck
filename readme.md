@@ -30,11 +30,70 @@ In addition most (but currently not all) error detection is synchronous so that 
 be placed within `dbgcheck.c` to provide a way to either print a stack trace or use an
 interactive debugger to gain insight into the error.
 
-## Memory philosophy
+## Memory checks
 
-TODO
+### Theory
 
-## Threading philosophy
+At a very high level, only two things can go wrong with memory. Either you try to access an address
+that isn't allocated, or you run out of it.
+
+If we treat all memory operations as byte-level reads or writes, then we can recategorize all
+possible errors like so:
+
+* computing an invalid address,
+* copying a too-large block to a given destination, or
+* using too much memory.
+
+*(Some low-level programs may also run into problems with aliasing, where a copy operation has been
+performed in an incorrect order causing a loss of data. From our byte-operation perspective, an
+aliasing error is not considered a low-level memory management problem.)*
+
+This categorization makes sense in terms of `malloc` and `free` since every allocated block is an
+island, and the only valid pointers within that block must be always be ultimately derived from
+the starting address of that block. Hence the only way to arrive at an invalid address is to either
+not use a valid starting address, or to add an invalid offset to a valid starting address.
+
+### Practice
+
+Internally, `dbgcheck` adds additional bookkeeping to track memory references.
+When you allocate a block with `dbgcheck`, slightly more memory than you requested is actually
+allocated, and a block prefix is used to track the size of the block. `malloc` independently tracks
+block sizes, but `dbgcheck` is specifically designed to assume nothing beyond the formally
+specified behavior of `malloc`.
+
+Whenever you want to access memory using a pointer, you have the option of asking `dbgcheck` to
+verify the validity of your pointer. This works by classifying pointers as either
+*root pointers* or *inner pointers*. A root pointer points to the beginning of an allocated block;
+in other words, it is the return value from `dbgcheck__malloc` or any of the other `dbgcheck`-based
+allocating functions (the others wrap `strdup` and `calloc`). An inner pointer may point anywhere
+within an allocated block or to the byte directly after the end of the allocated block.
+This last case is useful for performing conditional checks of the form `my_ptr < block_end_ptr`,
+and is a legal C pointer value.
+
+Suppose you want to copy a string into an allocated block. To check the validity of the copy,
+`dbgcheck` asks you to provide the root pointer of the destination, the number of bytes about to
+be copied, and the destination pointer if it's not the same as the root pointer. Since `dbgcheck`
+can determine the full valid range of the destination block, this is sufficient to know exactly
+whether or not the copy operation is valid.
+
+In a sense, this kind of check is analogous to the difference between `strcpy` and `strncpy`.
+The difference is that `dbgcheck` can help you to verify that the value of *n* you provide
+matches the available memory at the destination.
+
+When a block is deallocated `dbgcheck` does something a little crazy, which is that it does *not*
+free the memory - it simply marks it so that it will know the memory has been freed. For those of
+you freaking out about your memory disappearing, please understand that this element of `dbgcheck`
+is designed for small use cases to help you isolate errors. In production, undefine the
+`dbgcheck_on` macro before including `dbgcheck.h`, which turns off this feature.
+
+By leaving blocks allocated, `dbgcheck` is extremely likely to detect double-frees and
+access-after-free errors.
+
+This methodology gives us a way to
+check for any of the three major categories of memory errors. The technical details of
+using `dbgcheck` to achieve this are covered in the API section below.
+
+## Threading checks
 
 TODO
 
