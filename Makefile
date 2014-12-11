@@ -3,9 +3,7 @@
 # TODO Add nicer comments; build on cstructs Makefile as an example.
 #
 
-# TODO Add a test!!
-
-#tests = out/dbgcheck_test
+tests = out/dbgcheck_test
 
 cstructs_obj = out/array.o out/map.o out/list.o
 
@@ -16,7 +14,6 @@ ifeq ($(shell uname -s), Darwin)
 else
 	cflags = $(includes) -std=c99 -D _GNU_SOURCE
 endif
-lflags = -lm
 cc = gcc $(cflags)
 
 # Test-running environment.
@@ -43,8 +40,8 @@ $(cstructs_obj) : out/%.o : cstructs/%.c cstructs/%.h | out
 out/ctest.o : test/ctest.c test/ctest.h | out
 	$(cc) -o $@ -c $<
 
-$(tests) : out/% : test/%.c $(cstructs_obj) out/thready.o out/ctest.o
-	$(cc) -o $@ $^ -pthread
+$(tests) : out/% : test/%.c $(cstructs_obj) out/dbgcheck.o out/thready.o out/ctest.o | out
+	$(cc) -o $@ $^
 
 out:
 	mkdir out
