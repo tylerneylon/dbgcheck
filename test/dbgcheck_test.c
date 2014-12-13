@@ -30,6 +30,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Memory tests
 
+// TODO Once I have at least three tests similar to the following format,
+//      pull out a general framework for writing tests like these (within
+//      this file).
+
 int test_free_of_random_ptr() {
   int retval = fork();
   if (retval == -1) {
@@ -63,8 +67,51 @@ int test_free_of_random_ptr() {
     signal(SIGSEGV, SIG_DFL);
     signal(SIGBUS,  SIG_DFL);
 
-    // This should cause the process to exit with status 1.
+    // This should cause the process to exit due to a bad-memory signal.
     dbgcheck__free((void *)(intptr_t)0x123, "my_set_name");
+
+    // It's bad if we get here; exit with status 0 to let the parent know.
+    exit(0);
+  }
+  return test_success;
+}
+
+int test_bad_set_name() {
+  int retval = fork();
+  if (retval == -1) {
+    test_failed("fork failed with error: %s\n", strerror(errno));
+  }
+  if (retval) {
+    // Parent code.
+    int status;
+    if (wait(&status) == -1) {
+      test_failed("wait failed with error: %s\n", strerror(errno));
+    }
+
+    // If it wasn't a SIGSEGV, then the only acceptable exit case is
+    // a non-signal exit code 1.
+    test_that(WIFEXITED(status));
+    test_that(WEXITSTATUS(status) == 1);
+  } else {
+    // Child code.
+
+    // ctest sets up signal handlers, but we don't want them here.
+    // We want bad memory access signals to kill us.
+    signal(SIGSEGV, SIG_DFL);
+    signal(SIGBUS,  SIG_DFL);
+
+    // Ignore stdout since we expect a passing test to generate
+    // dbgcheck-origin error messages.
+    FILE *f = freopen("/dev/null", "w", stdout);
+    if (f == NULL) {
+      printf("freopen failed with error: %s\n", strerror(errno));
+      exit(0);
+    }
+
+    void *ptr = dbgcheck__malloc(64, "set_name1");
+
+    // This should cause the process to exit with status 1.
+    dbgcheck__free(ptr, "set_name2");
 
     // It's bad if we get here; exit with status 0 to let the parent know.
     exit(0);
@@ -81,7 +128,7 @@ int main(int argc, char **argv) {
 
   start_all_tests(argv[0]);
   run_tests(
-    test_free_of_random_ptr
+    test_free_of_random_ptr, test_bad_set_name
   );
   return end_all_tests();
 }
