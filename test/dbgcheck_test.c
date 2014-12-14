@@ -106,15 +106,49 @@ int test_free_of_random_ptr() {
   return test_callback(sig_is_ok, expect_failure, free_random_ptr);
 }
 
-void use_bad_set_name() {
+void use_bad_set_name_with_malloc() {
   void *ptr = dbgcheck__malloc(64, "set_name1");
 
   // This should cause the process to exit with status 1.
   dbgcheck__free(ptr, "set_name2");
 }
 
+void use_bad_set_name_with_calloc() {
+  void *ptr = dbgcheck__calloc(64, "set_name1");
+
+  // This should cause the process to exit with status 1.
+  dbgcheck__free(ptr, "set_name2");
+}
+
+void use_bad_set_name_with_strdup() {
+  void *ptr = dbgcheck__strdup("src string", "set_name1");
+
+  // This should cause the process to exit with status 1.
+  dbgcheck__free(ptr, "set_name2");
+}
+
 int test_bad_set_name() {
-  return test_callback(sig_is_not_ok, expect_failure, use_bad_set_name);
+  test_callback(sig_is_not_ok, expect_failure, use_bad_set_name_with_malloc);
+  test_callback(sig_is_not_ok, expect_failure, use_bad_set_name_with_calloc);
+  test_callback(sig_is_not_ok, expect_failure, use_bad_set_name_with_strdup);
+
+  // Any errors will be noticed before the return statement.
+  return test_success;
+}
+
+void use_mem_ops_correctly() {
+  void *ptr_from_malloc = dbgcheck__malloc(8, "from malloc");
+  void *ptr_from_calloc = dbgcheck__calloc(8, "from calloc");
+  test_that(*(char *)ptr_from_calloc == '\0');
+  void *ptr_from_strdup = dbgcheck__strdup("hi", "from strdup");
+
+  dbgcheck__free(ptr_from_malloc, "from malloc");
+  dbgcheck__free(ptr_from_calloc, "from calloc");
+  dbgcheck__free(ptr_from_strdup, "from strdup");
+}
+
+int test_correct_mem_usage() {
+  return test_callback(sig_is_not_ok, expect_success, use_mem_ops_correctly);
 }
 
 
@@ -126,7 +160,7 @@ int main(int argc, char **argv) {
 
   start_all_tests(argv[0]);
   run_tests(
-    test_free_of_random_ptr, test_bad_set_name
+    test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage
   );
   return end_all_tests();
 }
