@@ -63,6 +63,9 @@ int test_callback(int is_sig_ok, int expected_status, Callback callback) {
         test_that(sig == SIGSEGV || sig == SIGBUS);
         return test_success;  // We only get here if the above is true.
       }
+    } else if (WIFSIGNALED(status)) {
+      test_printf("Signal-not-ok but child was killed via signal %d\n",
+          WTERMSIG(status));
     }
 
     test_that(WIFEXITED(status));
@@ -151,6 +154,23 @@ int test_correct_mem_usage() {
   return test_callback(sig_is_not_ok, expect_success, use_mem_ops_correctly);
 }
 
+void make_check_ptr_fail_by_bad_ptr() {
+  void *ptr = dbgcheck__malloc(8, "void *");
+  dbgcheck__ptr(ptr + 1, "void *");
+}
+
+void make_check_ptr_fail_by_bad_set_name() {
+  void *ptr = dbgcheck__malloc(8, "set_name1");
+  dbgcheck__ptr(ptr, "set_name2");
+}
+
+int test_check_ptr() {
+  test_callback(sig_is_ok, expect_failure, make_check_ptr_fail_by_bad_ptr);
+  test_callback(sig_is_not_ok, expect_failure,
+      make_check_ptr_fail_by_bad_set_name);
+  return test_success;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main
@@ -160,7 +180,8 @@ int main(int argc, char **argv) {
 
   start_all_tests(argv[0]);
   run_tests(
-    test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage
+    test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage,
+    test_check_ptr
   );
   return end_all_tests();
 }
