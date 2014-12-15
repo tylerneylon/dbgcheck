@@ -155,8 +155,8 @@ int test_correct_mem_usage() {
 }
 
 void make_check_ptr_fail_by_bad_ptr() {
-  void *ptr = dbgcheck__malloc(8, "void *");
-  dbgcheck__ptr(ptr + 1, "void *");
+  void *ptr = dbgcheck__malloc(8, "void");
+  dbgcheck__ptr(ptr + 1, "void");
 }
 
 void make_check_ptr_fail_by_bad_set_name() {
@@ -171,6 +171,22 @@ int test_check_ptr() {
   return test_success;
 }
 
+void double_free() {
+  void *ptr = dbgcheck__malloc(8, "void");
+  dbgcheck__free(ptr, "void");
+  dbgcheck__free(ptr, "void");
+
+  // The current double-free check is asynchronous, and if we don't give
+  // the checking thread a chance to perform the check, this end-of-function
+  // will exit the process with status 0 (via the test_callback wrapper).
+  // So let's give the other thread a second to perform the check.
+  sleep(1);
+}
+
+int test_double_free() {
+  return test_callback(sig_is_not_ok, expect_failure, double_free);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main
@@ -181,7 +197,7 @@ int main(int argc, char **argv) {
   start_all_tests(argv[0]);
   run_tests(
     test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage,
-    test_check_ptr
+    test_check_ptr, test_double_free
   );
   return end_all_tests();
 }
