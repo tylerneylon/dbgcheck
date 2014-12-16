@@ -168,11 +168,38 @@ void disobey_sync_block_in_multiple_threads() {
   usleep(1000 * 10);  // Sleep for 10 ms.
 }
 
+void obey_sync_blocks() {
+  for (int i = 0; i < 10; ++i) {
+    dbgcheck__start_sync_block("obeyed block");
+    dbgcheck__in_sync_block("obeyed block");
+    dbgcheck__end_sync_block("obeyed block");
+  }
+}
+
 int test_sync_blocks() {
   test_callback(sig_is_not_ok, expect_failure,
                 disobey_sync_block_in_one_thread);
   test_callback(sig_is_not_ok, expect_failure,
                 disobey_sync_block_in_multiple_threads);
+  test_callback(sig_is_not_ok, expect_success,
+                obey_sync_blocks);
+  return test_success;
+}
+
+void disobey_in_sync() {
+  dbgcheck__in_sync_block("block");
+}
+
+void obey_in_sync() {
+  dbgcheck__start_sync_block("block");
+  dbgcheck__in_sync_block("block");
+  dbgcheck__end_sync_block("block");
+}
+
+// Say bye bye bye to not knowing if we're in a sync block.
+int test_in_sync() {
+  test_callback(sig_is_not_ok, expect_failure, disobey_in_sync);
+  test_callback(sig_is_not_ok, expect_success,    obey_in_sync);
   return test_success;
 }
 
@@ -345,7 +372,7 @@ int main(int argc, char **argv) {
 
   start_all_tests(argv[0]);
   run_tests(
-    test_same_thread, test_sync_blocks,
+    test_same_thread, test_sync_blocks, test_in_sync,
     test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage,
     test_check_ptr, test_double_free, test_ptr_size, test_inner_ptr_checks,
     test_fail_if
