@@ -10,6 +10,7 @@
 // TODO Check if I need all of the preprocessor directives below.
 
 #include "ctest.h"
+#include "thready/pthreads_win.h"
 
 #include <signal.h>
 #include <stdint.h>
@@ -100,6 +101,45 @@ int test_callback_(int is_sig_ok, int expected_status,
     exit(0);
   }
 
+  return test_success;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Thread tests
+
+void *do_same_thread_check(void *unused) {
+  dbgcheck__same_thread();
+  return NULL;
+}
+
+void disobey_same_thread() {
+  // We'll make 10 threads and run the same function in all of them.
+  pthread_t thread;
+  for (int i = 0; i < 10; ++i) {
+    pthread_create(&thread,
+                   NULL,   // default attributes
+                   do_same_thread_check,
+                   NULL);  // parameter for do_same_thread_check
+  }
+  // The same_thread check is asynchronous, so give dbgcheck a moment to
+  // process things.
+  usleep(1000 * 10);  // Sleep for 10 ms.
+}
+
+void obey_same_thread() {
+  for (int i = 0; i < 10; ++i) {
+    // NULL --> unused parameter required for a pthread callback
+    do_same_thread_check(NULL);
+  }
+  // The same_thread check is asynchronous, so give dbgcheck a moment to
+  // process things.
+  usleep(1000 * 10);  // Sleep for 10 ms.
+}
+
+int test_same_thread() {
+  test_callback(sig_is_not_ok, expect_failure, disobey_same_thread);
+  test_callback(sig_is_not_ok, expect_success, obey_same_thread);
   return test_success;
 }
 
@@ -272,6 +312,7 @@ int main(int argc, char **argv) {
 
   start_all_tests(argv[0]);
   run_tests(
+    test_same_thread,
     test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage,
     test_check_ptr, test_double_free, test_ptr_size, test_inner_ptr_checks,
     test_fail_if
