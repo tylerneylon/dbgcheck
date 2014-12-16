@@ -39,12 +39,19 @@ const int sig_is_not_ok = 0;
 const int expect_success = 0;
 const int expect_failure = 1;
 
+#define test_callback(sigflag, status, cb) \
+        test_callback_(sigflag, status, cb, #cb)
+
 // This calls the callback in an isolated environment and:
 //  1. If is_sig_ok is nonzero, the test passes if the callback exits due to
 //     either SIGSEGV or SIGBUS (memory errors).
 //  2. If the callback exits normally with expected_status, the test passes.
 //  In any other case, the test fails.
-int test_callback(int is_sig_ok, int expected_status, Callback callback) {
+int test_callback_(int is_sig_ok, int expected_status,
+                   Callback callback, const char *callback_name) {
+
+  test_printf("Running %s\n", callback_name);
+
   int retval = fork();
   if (retval == -1) {
     test_failed("fork failed with error: %s\n", strerror(errno));
