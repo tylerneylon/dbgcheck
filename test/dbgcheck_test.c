@@ -203,6 +203,42 @@ int test_ptr_size() {
   return test_success;
 }
 
+void use_bad_inner_ptr() {
+  void *root_ptr  = dbgcheck__malloc(8, "void");
+  void *inner_ptr = root_ptr + 10;
+  dbgcheck__inner_ptr(inner_ptr, root_ptr, "void");
+}
+
+void use_good_inner_ptr() {
+  void *root_ptr  = dbgcheck__malloc(8, "void");
+  void *inner_ptr = root_ptr + 2;
+  dbgcheck__inner_ptr(inner_ptr, root_ptr, "void");
+
+  // This case should still be ok as end-of-buffer pointers are ok.
+  inner_ptr = root_ptr + 8;
+  dbgcheck__inner_ptr(inner_ptr, root_ptr, "void");
+}
+
+void use_bad_inner_ptr_size() {
+  void *root_ptr  = dbgcheck__malloc(8, "void");
+  void *inner_ptr = root_ptr + 2;
+  dbgcheck__inner_ptr_size(inner_ptr, root_ptr, "void", 8);
+}
+
+void use_good_inner_ptr_size() {
+  void *root_ptr  = dbgcheck__malloc(8, "void");
+  void *inner_ptr = root_ptr + 2;
+  dbgcheck__inner_ptr_size(inner_ptr, root_ptr, "void", 6);
+}
+
+int test_inner_ptr_checks() {
+  test_callback(sig_is_not_ok, expect_failure, use_bad_inner_ptr);
+  test_callback(sig_is_not_ok, expect_success, use_good_inner_ptr);
+  test_callback(sig_is_not_ok, expect_failure, use_bad_inner_ptr_size);
+  test_callback(sig_is_not_ok, expect_success, use_good_inner_ptr_size);
+  return test_success;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main
@@ -213,7 +249,7 @@ int main(int argc, char **argv) {
   start_all_tests(argv[0]);
   run_tests(
     test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage,
-    test_check_ptr, test_double_free, test_ptr_size
+    test_check_ptr, test_double_free, test_ptr_size, test_inner_ptr_checks
   );
   return end_all_tests();
 }
