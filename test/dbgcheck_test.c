@@ -248,6 +248,23 @@ int test_inner_ptr_checks() {
 
 
 ////////////////////////////////////////////////////////////////////////////////
+// General condition (fail_if) tests
+
+void check_good_condition() {
+  dbgcheck__fail_if(0, "This should not fail.\n");
+}
+
+void check_bad_condition() {
+  dbgcheck__fail_if(1, "This should always fail.\n");
+}
+
+int test_fail_if() {
+  test_callback(sig_is_not_ok, expect_success, check_good_condition);
+  test_callback(sig_is_not_ok, expect_failure, check_bad_condition);
+  return test_success;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Main
 
 int main(int argc, char **argv) {
@@ -256,7 +273,8 @@ int main(int argc, char **argv) {
   start_all_tests(argv[0]);
   run_tests(
     test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage,
-    test_check_ptr, test_double_free, test_ptr_size, test_inner_ptr_checks
+    test_check_ptr, test_double_free, test_ptr_size, test_inner_ptr_checks,
+    test_fail_if
   );
   return end_all_tests();
 }
