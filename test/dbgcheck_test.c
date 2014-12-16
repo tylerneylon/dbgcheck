@@ -4,6 +4,13 @@
 //
 // For testing the dbgcheck library.
 //
+// Some of these tests could theoretically give false failures, meaning that
+// they may report something is wrong when the code being tested is actually
+// ok. Specifically, these tests sometimes simply call sleep or usleep to let
+// other threads do their thing. There is not technically a guarantee that the
+// other threads will finish doing their thing in the given time. In practice,
+// however, I would be surprised if this ever actually happens.
+//
 
 #include "dbgcheck/dbgcheck.h"
 
@@ -118,9 +125,9 @@ void disobey_same_thread() {
   pthread_t thread;
   for (int i = 0; i < 10; ++i) {
     pthread_create(&thread,
-                   NULL,   // default attributes
-                   do_same_thread_check,
-                   NULL);  // parameter for do_same_thread_check
+                   NULL,                  // default attributes
+                   do_same_thread_check,  // callback
+                   NULL);                 // parameter for the callback
   }
   // The same_thread check is asynchronous, so give dbgcheck a moment to
   // process things.
@@ -159,9 +166,9 @@ void disobey_sync_block_in_multiple_threads() {
   pthread_t thread;
   for (int i = 0; i < 10; ++i) {
     pthread_create(&thread,
-                   NULL,   // default attributes
-                   run_w_sync_block,
-                   NULL);  // parameter for do_same_thread_check
+                   NULL,              // default attributes
+                   run_w_sync_block,  // callback
+                   NULL);             // parameter for the callback
   }
   // Give the other threads a moment to run - otherwise we'll drop out
   // and (perhaps falsy) report no problem.
@@ -203,6 +210,61 @@ int test_in_sync() {
   return test_success;
 }
 
+void get_lock_twice() {
+  pthread_mutex_t lock;
+  pthread_mutex_init(&lock, NULL);  // NULL --> default attributes
+  dbgcheck__lock(&lock);
+  dbgcheck__lock(&lock);
+  pthread_mutex_destroy(&lock);
+  // The lock checks are asynchronous, so give dbgcheck a moment to
+  // process things.
+  usleep(1000 * 10);  // Sleep for 10 ms.
+}
+
+void unlock_without_lock() {
+  pthread_mutex_t lock;
+  pthread_mutex_init(&lock, NULL);  // NULL --> default attributes
+  dbgcheck__unlock(&lock);
+  pthread_mutex_destroy(&lock);
+  // The lock checks are asynchronous, so give dbgcheck a moment to
+  // process things.
+  usleep(1000 * 10);  // Sleep for 10 ms.
+}
+
+void *obtain_lock(void *lock) {
+  dbgcheck__lock((pthread_mutex_t *)lock);
+  return NULL;
+}
+
+void unlock_when_owned_by_other_thread() {
+
+  pthread_mutex_t lock;
+  pthread_mutex_init(&lock, NULL);  // NULL --> default attributes
+
+  pthread_t thread;
+  pthread_create(&thread,
+                 NULL,         // default attributes
+                 obtain_lock,  // callback
+                 &lock);       // parameter for the callback
+
+  // Give the other thread a moment to obtain the lock.
+  usleep(1000 * 10);  // Sleep for 10 ms.
+
+  // We expect dbgcheck to exit with status 1 here.
+  dbgcheck__unlock(&lock);
+
+  // The lock checks are asynchronous, so give dbgcheck a moment to
+  // process things.
+  usleep(1000 * 10);  // Sleep for 10 ms.
+}
+
+
+int test_locks() {
+  test_callback(sig_is_not_ok, expect_failure, get_lock_twice);
+  test_callback(sig_is_not_ok, expect_failure, unlock_without_lock);
+  test_callback(sig_is_not_ok, expect_failure, unlock_when_owned_by_other_thread);
+  return test_success;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Memory tests
@@ -372,9 +434,12 @@ int main(int argc, char **argv) {
 
   start_all_tests(argv[0]);
   run_tests(
-    test_same_thread, test_sync_blocks, test_in_sync,
+    // Thread tests
+    test_same_thread, test_sync_blocks, test_in_sync, test_locks,
+    // Memory tests
     test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage,
     test_check_ptr, test_double_free, test_ptr_size, test_inner_ptr_checks,
+    // General condition tests
     test_fail_if
   );
   return end_all_tests();
