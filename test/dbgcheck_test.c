@@ -143,6 +143,39 @@ int test_same_thread() {
   return test_success;
 }
 
+void *run_w_sync_block(void *unused) {
+  dbgcheck__start_sync_block("my sync block");
+  return NULL;
+}
+
+void disobey_sync_block_in_one_thread() {
+  // Violate a sync block in a single thread.
+  dbgcheck__start_sync_block("1-thread block");
+  dbgcheck__start_sync_block("1-thread block");
+}
+
+void disobey_sync_block_in_multiple_threads() {
+  // We'll make 10 threads and run the same function in all of them.
+  pthread_t thread;
+  for (int i = 0; i < 10; ++i) {
+    pthread_create(&thread,
+                   NULL,   // default attributes
+                   run_w_sync_block,
+                   NULL);  // parameter for do_same_thread_check
+  }
+  // Give the other threads a moment to run - otherwise we'll drop out
+  // and (perhaps falsy) report no problem.
+  usleep(1000 * 10);  // Sleep for 10 ms.
+}
+
+int test_sync_blocks() {
+  test_callback(sig_is_not_ok, expect_failure,
+                disobey_sync_block_in_one_thread);
+  test_callback(sig_is_not_ok, expect_failure,
+                disobey_sync_block_in_multiple_threads);
+  return test_success;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Memory tests
@@ -312,7 +345,7 @@ int main(int argc, char **argv) {
 
   start_all_tests(argv[0]);
   run_tests(
-    test_same_thread,
+    test_same_thread, test_sync_blocks,
     test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage,
     test_check_ptr, test_double_free, test_ptr_size, test_inner_ptr_checks,
     test_fail_if
