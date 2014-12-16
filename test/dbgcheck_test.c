@@ -187,6 +187,22 @@ int test_double_free() {
   return test_callback(sig_is_not_ok, expect_failure, double_free);
 }
 
+void use_bad_ptr_size() {
+  void *ptr = dbgcheck__malloc(8, "void");
+  dbgcheck__ptr_size(ptr, "void", 9);
+}
+
+void use_good_ptr_size() {
+  void *ptr = dbgcheck__malloc(8, "void");
+  dbgcheck__ptr_size(ptr, "void", 8);
+}
+
+int test_ptr_size() {
+  test_callback(sig_is_not_ok, expect_failure, use_bad_ptr_size);
+  test_callback(sig_is_not_ok, expect_success, use_good_ptr_size);
+  return test_success;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main
@@ -197,7 +213,7 @@ int main(int argc, char **argv) {
   start_all_tests(argv[0]);
   run_tests(
     test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage,
-    test_check_ptr, test_double_free
+    test_check_ptr, test_double_free, test_ptr_size
   );
   return end_all_tests();
 }
