@@ -95,6 +95,38 @@ using `dbgcheck` to achieve this are covered in the API section below.
 
 ## Threading checks
 
+### Theory
+
+There are two major bugs that can occur in multithreaded code:
+
+* Two sections of code intended to never run concurrently
+  may run concurrently, or
+* a thread may become stuck waiting forever on a lock.
+
+The first category of bug is difficult to check automatically, since the decision of which sections of code are not meant to
+run concurrently is nontrivial. The `dbgcheck` library does not
+attempt to solve this problem, but instead helps to clarify and
+verify the concurrency rules set up by the programmer;
+`dbgcheck` can also provide some checks against low-level lock
+usage errors. These checks are described in the next
+section.
+
+Another relevant idea is *lock nesting*: we say that lock
+*A* nests outside lock *B* when some code locks *B* while *A*
+is already locked. A deadlock between *A* and *B* can occur if
+they nest outside each other.
+More generally, we can create a directed *nesting graph*
+between locks where node *A* is connected to *B*
+(*A* → *B*) when *A* nests outside *B*. Then a deadlock between
+these locks can only occur if this graph contains a cycle.
+
+The `dbgcheck` library does not currently know about lock
+nesting behavior or graphs beyond trivial cases. However,
+it is good design to think and communicate clearly about
+lock nesting behavior.
+
+### Practice
+
 TODO
 
 ## API
