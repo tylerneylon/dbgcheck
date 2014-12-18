@@ -127,7 +127,66 @@ lock nesting behavior.
 
 ### Practice
 
-TODO
+The `dbgcheck` library offers two types of thread-safety checks.
+1. Some checks communicate and verify that a concurrency design is upheld.
+2. Other checks wrap mutex lock and unlock calls to check for certain error cases.
+
+### Communicating and verifying concurrency design
+
+Any given block of C code is either thread-safe, expected to run in a single thread, or
+expected to be run in a way that avoids concurrency with certain other code.
+
+In this document, we'll discuss such code blocks as if they were always functions; however
+`dbgcheck` supports these checks at different points within functions as well.
+
+In the thread-safe case, there is no incorrect thread scenario, so `dbgcheck` has no
+verification function. However, it is recommended to clarify which functions are
+meant to be thread-safe with a comment. There are different degrees of thread-safety as well,
+such as being reentrant (safe to call recursively) or being safe to call concurrently if the
+inputs are different (such as a function that manipulates an input struct). A function that uses
+changing static variables fails both of these thread-safety conditions. It is recommended to
+use a comment to clearly label which code blocks are thread-safe, and to use a more specific
+nomenclature than simply "thread-safe."
+
+Functions that expect to only be called from the same thread may use the `dbgcheck__same_thread`
+function. This will notice as soon as the function is run from a second thread, concurrently or not.
+
+Some functions may expect to be run from different threads, but never concurrently. To verify this,
+you may use the `dbgcheck__start_sync_block` and `dbgcheck__end_sync_block` pair. These accept a
+string literal as input, which is the name of the `sync_block`.
+They pay attention to whether or not that block is ever entered twice, which
+indicates an unexpected concurrency. This same mechanism can be used to verify when multiple
+functions are all meant to avoid concurrency with each other.
+
+Finally, some functions may expect their caller to have already locked a mutex or used some other
+concurrency control to enter a `sync_block`. This expectation can be communicated and verified with
+the `dbgcheck__in_sync_block` function, which notices if it is called outside of a
+started-but-not-yet-ended `sync_block` of the given name.
+
+The `dbgcheck` library also wraps the calls `pthread_mutex_lock` and `pthread_mutex_unlock` with
+`dbgcheck__lock` and `dbgcheck__unlock` to notice the following error cases:
+
+* a thread trying to lock a mutex it currently has locked, or
+* a thread trying to unlock a mutex it does not have locked.
+
+If a mutex is being used to avoid concurrency around a group of `sync_block` code blocks, then it's
+recommended to wrap the mutex controls around the `sync_block` checks, like so:
+
+    dbgcheck__lock(&lock);
+    dbgcheck__start_sync_block("my sync block");
+
+    // your concurrency-avoiding code here
+
+    dbgcheck__end_sync_block("my sync block");
+    dbgcheck__unlock(&lock);
+
+Using these functions in any other order would result in a `sync_block` call occurring when the lock was not
+held, which could result in a concurrency violation.
+
+### Clarity of code design
+
+Note that these calls are designed for both verification *and communication*. Even when `dbgcheck` is
+turned off, these lines clarify the expected thread behavior of your program, which is a good thing.
 
 ## API
 
