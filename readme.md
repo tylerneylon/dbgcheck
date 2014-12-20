@@ -2,7 +2,7 @@
 
 *Check your C before you wreck your C.*
 
-The dbgcheck library addresses the most difficult aspects of
+The `dbgcheck` library is a cross-platform way to address the most difficult aspects of
 debugging C code: memory and threading issues.
 
 In particular, dbgcheck helps to avoid and isolate the following types of problems:
@@ -29,6 +29,8 @@ the error is in an unwrapped call, then `dbgcheck` cannot detect that error.)
 In addition most (but currently not all) error detection is synchronous so that breakpoints can
 be placed within `dbgcheck.c` to provide a way to either print a stack trace or use an
 interactive debugger to gain insight into the error.
+
+This library works on windows, mac, and ubuntu.
 
 ## Memory checks
 
@@ -288,8 +290,88 @@ Here are tips to help remember the order of parameters in these last four functi
 
 ### Thread functions
 
-TODO
+#### ❑ `void dbgcheck__same_thread()`
+
+This function notices if it is ever called from the same location -
+that is, from the same source file and line number - from different
+threads. It communicates that the code block it occurs in is
+designed to only ever run from a single specific thread.
+
+#### ❑ `void dbgcheck__start_sync_block(const char *name)`
+
+This function begins a `sync_block` with the given `name`.
+If `dbgcheck__start_sync_block` is called on `name` again
+before `dbgcheck__start_end_block` is called on `name`, then this
+is an error condition noticed by `dbgcheck`.
+
+The `name` is expected to be a string literal as a pointer to it
+is held indefinitely.
+It is recommended that both the start and end of a `sync_block`
+live in the same function, although this block may call other
+functions.
+
+#### ❑ `void dbgcheck__end_sync_block(const char *name)`
+
+This function marks the end of a concurrency-avoiding code block
+begun by `dbgcheck__start_sync_block`.
+
+The `name` is expected to be a string literal as a pointer to it
+is held indefinitely.
+It is recommended that both the start and end of a `sync_block`
+live in the same function, although this block may call other
+functions.
+
+#### ❑ `void dbgcheck__in_sync_block(const char *name)`
+
+This function expects the code to currently be within a
+`sync_block` with the given `name`. The start of a `sync_block`
+is set by calling `dbgcheck__start_sync_block`.
+
+This is useful to communicate and verify that a
+function expects its caller to start a `sync_block`, but that
+it does not mark the start or end of a `sync_block` itself.
+This can be useful when a function is called by other functions
+that lock and unlock a mutex corresponding to a `sync_block`.
+
+#### ❑ `void dbgcheck__lock(pthread_mutex_t *mutex)`
+
+This wraps the `pthread_mutex_lock` function when `pthreads` is
+available, and the `EnterCriticalSection` function on windows.
+
+This adds the functionality of verifying that the calling thread
+has not already locked the given `mutex`.
+
+#### ❑ `void dbgcheck__unlock(pthread_mutex_t *mutex)`
+
+This wraps the `pthread_mutex_unlock` function when `pthreads` is
+available, and the `LeaveCriticalSection` function on windows.
+
+This adds the functionality of verifying that the calling thread
+currently has the given `mutex` locked.
 
 ### General condition checks
 
-TODO
+#### ❑ `void dbgcheck__fail_if(int cond, const char *fmt, ...)`
+
+This expects the given `cond` to evaluate to zero. If `cond` is nonzero,
+then the message given in `fmt` and the remaining `...` variadic parameters
+are printed out using `printf`-style formatting.
+
+As usual with unmet expectations, `dbgcheck` terminates the program
+if `cond` is not zero; also as usual, this termination behavior is
+turned off when `dbgcheck_on` is left undefined.
+
+#### ❑ `void dbgcheck__warn_if(int cond, const char *fmt, ...)`
+
+This function is identical to `dbgcheck__fail_if`, except that it never
+terminates the program; instead it only prints the given message when
+`cond` is nonzero.
+
+In more detail:
+this expects the given `cond` to evaluate to zero. If `cond` is nonzero,
+then the message given in `fmt` and the remaining `...` variadic parameters
+are printed out using `printf`-style formatting.
+
+As an exception to the standard `dbgcheck` behavior, this function
+does *not* terminate the program if its expectation is unmet, that is,
+if `cond` is nonzero.
