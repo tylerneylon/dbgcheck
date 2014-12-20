@@ -14,12 +14,15 @@ In particular, dbgcheck helps to avoid and isolate the following types of proble
 * unsafe concurrency.
 
 These are achieved by wrapping your calls to memory management and threading functions with
-`dbgcheck`-defined macros. You do *not* need to wrap these throughout the code - isolated uses
-are fine. You also do not need to use any specific `malloc` implementation.
+`dbgcheck`-defined macros.
+You are free to use `dbgcheck` only in sections of your code where you think errors are likely;
+that is, it does not assume it controls all `malloc` calls or other critical memory/thread
+functions - only related pairs, such as `malloc`/`free` pairs.
+This library can work with any `malloc` implementation.
 
-The best part about `dbgcheck` is that you can turn it off at compile-time so that it adds
+A major feature of `dbgcheck` is that you can turn it off at compile-time so that it adds
 absolutely zero overhead to the runtime efficiency of your application in production.
-The idea here is to test thoroughly with `dbgcheck` turned on, using it to isolate and eliminate
+The idea is to test thoroughly with `dbgcheck` turned on, using it to isolate and eliminate
 bugs -- then turn it off in production if application speed is critical.
 
 When `dbgcheck` finds an error, it reports the specific file and line where that error occurred.
@@ -46,12 +49,15 @@ possible errors like so:
 * copying a too-large block to a given destination, or
 * using too much memory.
 
-*(Some low-level programs may also run into problems with aliasing, where a copy operation has been
+*(Some low-level programs may also run into problems with *aliasing*, where a copy operation has been
 performed in an incorrect order causing a loss of data. From our byte-operation perspective, an
-aliasing error is not considered a low-level memory management problem.)*
+aliasing error is not considered a low-level memory management problem.
+We also consider `NULL` pointers to be "not a pointer" for this categorization; `dbgcheck` can
+help notice if a `NULL` value is about to be dereferenced, although most systems will already
+let you know when you do that!)*
 
 This categorization makes sense in terms of `malloc` and `free` since every allocated block is an
-island, and the only valid pointers within that block must be always be ultimately derived from
+island, and the only valid pointers within that block must always be ultimately derived from
 the starting address of that block. Hence the only way to arrive at an invalid address is to either
 not use a valid starting address, or to add an invalid offset to a valid starting address.
 
@@ -93,7 +99,7 @@ access-after-free errors.
 
 This methodology gives us a way to
 check for any of the three major categories of memory errors. The technical details of
-using `dbgcheck` to achieve this are covered in the API section below.
+using `dbgcheck` to achieve this are covered in the API reference below.
 
 ## Threading checks
 
@@ -114,7 +120,7 @@ usage errors. These checks are described in the next
 section.
 
 Another relevant idea is *lock nesting*: we say that lock
-*A* nests outside lock *B* when some code locks *B* while *A*
+*A* *nests outside* lock *B* when some code locks *B* while *A*
 is already locked. A deadlock between *A* and *B* can occur if
 they nest outside each other.
 More generally, we can create a directed *nesting graph*
@@ -138,10 +144,10 @@ The `dbgcheck` library offers two types of thread-safety checks.
 Any given block of C code is either thread-safe, expected to run in a single thread, or
 expected to be run in a way that avoids concurrency with certain other code.
 
-In this document, we'll discuss such code blocks as if they were always functions; however
-`dbgcheck` supports these checks at different points within functions as well.
+In this section, we'll discuss such code blocks as if they were always functions; however
+`dbgcheck` supports these checks at different points within or across functions as well.
 
-In the thread-safe case, there is no incorrect thread scenario, so `dbgcheck` has no
+If a function is thread-safe, there is no incorrect thread scenario, so `dbgcheck` has no
 verification function. However, it is recommended to clarify which functions are
 meant to be thread-safe with a comment. There are different degrees of thread-safety as well,
 such as being reentrant (safe to call recursively) or being safe to call concurrently if the
@@ -165,7 +171,9 @@ concurrency control to enter a `sync_block`. This expectation can be communicate
 the `dbgcheck__in_sync_block` function, which notices if it is called outside of a
 started-but-not-yet-ended `sync_block` of the given name.
 
-The `dbgcheck` library also wraps the calls `pthread_mutex_lock` and `pthread_mutex_unlock` with
+The `dbgcheck` library also wraps the calls `pthread_mutex_lock` and `pthread_mutex_unlock` -
+and their windows equivalents -
+with
 `dbgcheck__lock` and `dbgcheck__unlock` to notice the following error cases:
 
 * a thread trying to lock a mutex it currently has locked, or
@@ -188,14 +196,14 @@ held, which could result in a concurrency violation.
 ### Clarity of code design
 
 Note that these calls are designed for both verification *and communication*. Even when `dbgcheck` is
-turned off, these lines clarify the expected thread behavior of your program, which is a good thing.
+turned off, these lines clarify the expected concurrency behavior of your program, which is a good thing.
 
 ## API Reference
 
 The "functions" below are all macros. They are defined this way so that they can use the
 compiler-defined `__FILE__` and `__LINE__` macros to know which code location the function is
 being called from. This is used to print out code location information if an error condition is
-noticed.
+noticed, and in some cases to know if an unexpected event has occurred.
 
 When an error condition is noticed by `dbgcheck` - and when `dbgcheck` is turned on -
 your app will exit immediately with some indication as to why. In almost all cases, your app
@@ -212,7 +220,8 @@ something goes wrong, will cause `dbgcheck` to exit your application with a mess
 In case some readers are wondering why it's a good thing for a library to crash your app,
 keep in mind that your app will only cause this to happen if it already contains a serious bug that
 leads to undefined or frozen behavior. The usefulness of `dbgcheck` is in isolating and defending
-against these errors with much greater transparency.
+against these errors with much greater transparency. This crash-on-bug behavior is behind
+a flag meant to be turned off in production.
 
 ### Memory functions
 
@@ -249,10 +258,9 @@ It also checks that the memory block was allocated with the given `set_name`.
 
 This performs the same checks as `dbgcheck__ptr`, and also checks that the given `ptr` - which
 is expected to be a root pointer - has at least `size` room allocated in it. This is a great
-check to perform before a function that may perform buffer overflows if used incorrectly; for
+check to perform before a function that may cause a buffer overflow if used incorrectly; for
 example:
 
-    size_t buf_size = a_size;
     dbgcheck__ptr_size(dst_ptr, "dst str", buf_size);
     strncpy(dst_ptr, src_ptr, buf_size);
 
@@ -276,7 +284,6 @@ This performs the same checks as `dbgcheck__inner_ptr`. It also checks that ther
 `dbgcheck__ptr_size`, this helps to avoid buffer overflows. For example:
 
 ```
-size_t buf_tail_size = a_size;
 dbgcheck__inner_ptr_size(inner_p, root_p, "dst str", buf_tail_size);
 strncpy(inner_p, src_p, buf_tail_size);
 ```
@@ -301,25 +308,27 @@ designed to only ever run from a single specific thread.
 
 This function begins a `sync_block` with the given `name`.
 If `dbgcheck__start_sync_block` is called on `name` again
-before `dbgcheck__start_end_block` is called on `name`, then this
+before `dbgcheck__end_sync_block` is called on `name`, then this
 is an error condition noticed by `dbgcheck`.
 
-The `name` is expected to be a string literal as a pointer to it
+The `name` is expected to be a string literal, as a pointer to it
 is held indefinitely.
 It is recommended that both the start and end of a `sync_block`
 live in the same function, although this block may call other
-functions.
+functions; otherwise it is harder to reason about the
+correctness of the code.
 
 #### ❑ `void dbgcheck__end_sync_block(const char *name)`
 
 This function marks the end of a concurrency-avoiding code block
 begun by `dbgcheck__start_sync_block`.
 
-The `name` is expected to be a string literal as a pointer to it
+The `name` is expected to be a string literal, as a pointer to it
 is held indefinitely.
 It is recommended that both the start and end of a `sync_block`
 live in the same function, although this block may call other
-functions.
+functions; otherwise it is harder to reason about the
+correctness of the code.
 
 #### ❑ `void dbgcheck__in_sync_block(const char *name)`
 
@@ -373,5 +382,5 @@ then the message given in `fmt` and the remaining `...` variadic parameters
 are printed out using `printf`-style formatting.
 
 As an exception to the standard `dbgcheck` behavior, this function
-does *not* terminate the program if its expectation is unmet, that is,
+does *not* terminate the program if its expectation is unmet - that is,
 if `cond` is nonzero.
