@@ -188,6 +188,108 @@ held, which could result in a concurrency violation.
 Note that these calls are designed for both verification *and communication*. Even when `dbgcheck` is
 turned off, these lines clarify the expected thread behavior of your program, which is a good thing.
 
-## API
+## API Reference
+
+The "functions" below are all macros. They are defined this way so that they can use the
+compiler-defined `__FILE__` and `__LINE__` macros to know which code location the function is
+being called from. This is used to print out code location information if an error condition is
+noticed.
+
+When an error condition is noticed by `dbgcheck` - and when `dbgcheck` is turned on -
+your app will exit immediately with some indication as to why. In almost all cases, your app
+will exit with error code 1 and will print out the file name, line number, and an explanation of
+what expectation was not met. In the exceptional case that you performed a pointer check where you
+sent in a non-root pointer as a root pointer, your app will exit due to either a `SIGSEGV` or a
+`SIGBUS`. In these cases, the recommended method of debugging is to attach a debugger before the
+signal is sent and examine the stack when the signal occurs.
+
+In the descriptions below the words *notice* and *expect* always indicate conditions which, if
+something goes wrong, will cause `dbgcheck` to exit your application with a message (or produce
+  SIGSEGV/SIGBUS in the exceptional case just mentioned).
+
+In case some readers are wondering why it's a good thing for a library to crash your app,
+keep in mind that your app will only cause this to happen if it already contains a serious bug that
+leads to undefined or frozen behavior. The usefulness of `dbgcheck` is in isolating and defending
+against these errors with much greater transparency.
+
+### Memory functions
+
+#### ❑ `void *dbgcheck__malloc(size_t size, const char *set_name)`
+
+This wraps a call to `malloc`. The additional `set_name` parameter is used to
+verify that the `dbgcheck__free` call that deallocates this block uses the same name.
+This is a way to both verify that your `free`s match your `malloc`s, and to communicate about,
+and ease searching for, all memory management calls related to the same type of object.
+
+#### ❑ `void *dbgcheck__calloc(size_t size, const char *set_name)`
+
+This is similar to `dbgcheck__malloc`, except that it wraps `calloc` instead of `malloc`;
+thus the allocated memory block is set to all zero.
+
+#### ❑ `char *dbgcheck__strdup(const char *src, const char *set_name)`
+
+This wraps a call to `strdup`. The additional `set_name` parameter enables communication and
+verification about which type of object is being allocated. See the `dbgcheck__malloc` description
+for more details about `set_name`.
+
+#### ❑ `void  dbgcheck__free(void *ptr, const char *set_name)`
+
+This frees a memory block allocated by `dbgcheck__{malloc,calloc,strdup}`. The `set_name` parameter
+is expected to match the `set_name` given to the allocating function.
+
+#### ❑ `void  dbgcheck__ptr(void *root_ptr, const char *set_name)`
+
+This function checks that the given `root_ptr` points to the beginning of a memory block allocated
+with one of `dbgcheck`'s allocation functions.
+It also checks that the memory block was allocated with the given `set_name`.
+
+#### ❑ `void  dbgcheck__ptr_size(void *ptr, const char *set_name, size_t size)`
+
+This performs the same checks as `dbgcheck__ptr`, and also checks that the given `ptr` - which
+is expected to be a root pointer - has at least `size` room allocated in it. This is a great
+check to perform before a function that may perform buffer overflows if used incorrectly; for
+example:
+
+    size_t buf_size = a_size;
+    dbgcheck__ptr_size(dst_ptr, "dst str", buf_size);
+    strncpy(dst_ptr, src_ptr, buf_size);
+
+#### ❑ `void  dbgcheck__inner_ptr(void *inner_ptr, void *root_ptr, const char *set_name)`
+
+This performs the same checks as `dbgcheck__ptr`, and also checks that the given `inner_ptr` points
+to some point within, or at the very end of, the memory block pointed to by `root_ptr`.
+Recall that C allows pointers to point to exactly one byte beyond an allocated memory block.
+To illustrate this idea:
+
+```
+char *root_ptr = malloc(a_size);
+char *inner_ptr = root_ptr + a_size;  // inner_ptr is legal
+inner_ptr++;                          // ruh-roh; no longer legal
+```
+
+#### ❑ `void  dbgcheck__inner_ptr_size(void *inner_ptr, void *root_ptr, const char *set_name, size_t size)`
+
+This performs the same checks as `dbgcheck__inner_ptr`. It also checks that there are at least
+`size` allocated bytes available in the memory block starting at `inner_ptr`. Similar to
+`dbgcheck__ptr_size`, this helps to avoid buffer overflows. For example:
+
+```
+size_t buf_tail_size = a_size;
+dbgcheck__inner_ptr_size(inner_p, root_p, "dst str", buf_tail_size);
+strncpy(inner_p, src_p, buf_tail_size);
+```
+
+Here are tips to help remember the order of parameters in these last four functions:
+* The `set_name` is always immediately after the root pointer.
+* If there's an inner pointer, it's always first.
+* If there's a size, it's always last.
+* The order and existence of `inner_ptr`, `root_ptr`, and `size` always follow the
+  order and existence of the words `inner`, `ptr`, and `size` in the function name.
+
+### Thread functions
+
+TODO
+
+### General condition checks
 
 TODO
