@@ -1,7 +1,18 @@
 # dbgcheck Makefile
 #
-# TODO Add nicer comments; build on cstructs Makefile as an example.
+# This library is meant to be used by including dbgcheck/dbgcheck.h and linking
+# with dbgcheck.o.
 #
+# The primary rules are:
+#
+# * all   -- Builds everything in the out/ directory.
+# * test  -- Builds and runs all tests, printing out the results.
+# * clean -- Deletes everything this makefile may have created.
+#
+
+
+#################################################################################
+# Variables for targets.
 
 tests = out/dbgcheck_test
 
@@ -19,14 +30,26 @@ cc = gcc $(cflags)
 # Test-running environment.
 testenv = DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib MALLOC_LOG_FILE=/dev/null
 
+
+#################################################################################
+# Primary rules; meant to be used directly.
+
+# Build everything.
 all: out/dbgcheck.o $(tests)
 
+# Build and run all tests.
 test: $(tests)
 	@echo Running tests:
 	@echo -
 	@for test in $(tests); do $(testenv) $$test || exit 1; done
 	@echo -
 	@echo All tests passed!
+
+clean:
+	rm -rf out/
+
+#################################################################################
+# Internal rules; meant to only be used indirectly by the above rules.
 
 out/dbgcheck.o: dbgcheck/dbgcheck.c dbgcheck/dbgcheck.h | out
 	$(cc) -o $@ -c $<
@@ -46,7 +69,5 @@ $(tests) : out/% : test/%.c $(cstructs_obj) out/dbgcheck.o out/thready.o out/cte
 out:
 	mkdir out
 
-clean:
-	rm -rf out/
-
+# The PHONY rule tells the makefile to ignore directories with the same name as a rule.
 .PHONY: test
