@@ -105,11 +105,17 @@
 #define dbgcheck__inner_ptr_size(inner_ptr, root_ptr, set_name, size) \
         dbgcheck__inner_ptr_size_(inner_ptr, root_ptr, set_name, size, __FILE__, __LINE__)
 
+
+////////////////////////////////////////////////////////////////////////////////
+// General checks and information.
+
 #define dbgcheck__fail_if(cond, ...) \
         dbgcheck__fail_if_(cond, __FILE__, __LINE__, __VA_ARGS__)
 
 #define dbgcheck__warn_if(cond, ...) \
         dbgcheck__warn_if_(cond, __FILE__, __LINE__, __VA_ARGS__)
+
+long    dbgcheck__bytes_used_by_set_name(const char *set_name);
 
 // Publicly-visible functions that are meant to only be called by using the
 // above macros.
@@ -162,5 +168,8 @@ void  dbgcheck__warn_if_(int cond, const char *file, int line, const char *fmt, 
 #define dbgcheck__fail_if(cond, fmt, ...)
 #define dbgcheck__fail_if_(cond, file, line, fmt, ...)
 #define dbgcheck__warn_if(cond, fmt, ...)
+
+// This always returns 0 when dbgcheck_on is not defined.
+long    dbgcheck__bytes_used_by_set_name(const char *set_name);
 
 #endif

@@ -428,6 +428,31 @@ int test_fail_if() {
   return test_success;
 }
 
+
+////////////////////////////////////////////////////////////////////////////////
+// Information tests
+
+int test_bytes_used() {
+  void *mem1 = dbgcheck__malloc(100, "abc");
+  void *mem2 = dbgcheck__calloc(100, "abc");
+  void *mem3 = dbgcheck__strdup("123456789", "abc");
+
+  long bytes_used = dbgcheck__bytes_used_by_set_name("abc");
+  test_printf("Before any frees, bytes_used=%d\n", bytes_used);
+  test_that(bytes_used == 210);
+
+  bytes_used = dbgcheck__bytes_used_by_set_name("def");
+  test_printf("For unused set_name, bytes_used=%d\n", bytes_used);
+  test_that(bytes_used == 0);
+
+  dbgcheck__free(mem1, "abc");
+  bytes_used = dbgcheck__bytes_used_by_set_name("abc");
+  test_printf("After a free of 100 bytes, bytes_used=%d\n", bytes_used);
+  test_that(bytes_used == 110);
+  return test_success;
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////
 // Main
 
@@ -442,7 +467,9 @@ int main(int argc, char **argv) {
     test_free_of_random_ptr, test_bad_set_name, test_correct_mem_usage,
     test_check_ptr, test_double_free, test_ptr_size, test_inner_ptr_checks,
     // General condition tests
-    test_fail_if
+    test_fail_if,
+    // Information tests
+    test_bytes_used
   );
   return end_all_tests();
 }

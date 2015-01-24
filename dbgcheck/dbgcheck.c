@@ -98,8 +98,12 @@ static Map sync_blocks;  // Maps block name -> block start loc (owned strings).
 // We hold a string for every location that calls dbgcheck__free.
 // This map acts as a hash set to efficiently keep only one copy of each string.
 static Map freed_from_locs;
+static pthread_mutex_t freed_from_lock;
+static pthread_once_t  freed_from_init_once = PTHREAD_ONCE_INIT;
 
 static Map bytes_per_set_name;  // Maps set_name -> num_bytes.
+static pthread_mutex_t bytes_per_name_lock;
+static pthread_once_t  bytes_per_name_init_once = PTHREAD_ONCE_INIT;
 
 
 // Internal functions.
@@ -155,18 +159,36 @@ static void init_sync_blocks() {
   sync_blocks->value_releaser = freer;
 }
 
-// Only runs on dbgcheck_thread.
+// This may run on any thread.
+static void init_bytes_per_name() {
+  pthread_mutex_init(&bytes_per_name_lock, NULL);
+  bytes_per_set_name = map__new(str_hash, str_eq);
+}
+
+// This may run on any thread.
+static void init_freed_from_locs() {
+  pthread_mutex_init(&freed_from_lock, NULL);
+  freed_from_locs = map__new(str_hash, str_eq);
+}
+
+// This may run on any thread.
 // sign is expected to be +1 or -1, depending on if the given root_ptr was just
 // allocated or freed.
-static void update_bytes_for_set_name(void *root_ptr, void *set_name, int sign) {
-  map__key_value *pair = map__find(bytes_per_set_name, set_name);
+static void update_bytes_for_set_name(void *root_ptr, const char *set_name, int sign) {
+  // We define this as most of the uses of set_name below treat it directly as a void *.
+  void *set_name_vp = (void *)set_name;
+
+  pthread_once(&bytes_per_name_init_once, init_bytes_per_name);
+  pthread_mutex_lock(&bytes_per_name_lock);
+  map__key_value *pair = map__find(bytes_per_set_name, set_name_vp);
   if (pair == NULL) {
-    pair = map__set(bytes_per_set_name, set_name, 0L);
+    pair = map__set(bytes_per_set_name, set_name_vp, 0L);
   }
   long num_bytes = (long)pair->value;
   Prefix *prefix = (Prefix *)root_ptr - 1;
   num_bytes += sign * prefix->user_size;
-  map__set(bytes_per_set_name, set_name, (void *)num_bytes);
+  map__set(bytes_per_set_name, set_name_vp, (void *)num_bytes);
+  pthread_mutex_unlock(&bytes_per_name_lock);
 }
 
 // This may run outside of dbgcheck_thread.
@@ -216,7 +238,8 @@ static void handle_msg(void *msg, thready__Id from) {
     pthread_mutex_unlock(&thready_id_lock);
     
     freed_from_locs    = map__new(str_hash, str_eq);
-    bytes_per_set_name = map__new(str_hash, str_eq);
+
+    pthread_once(&bytes_per_name_init_once, init_bytes_per_name);
     
     pthread_mutex_init(&lock_info_lock, NULL);  // NULL --> default attributes
     lock_info_of_mutex = map__new(hash, eq);
@@ -243,27 +266,6 @@ static void handle_msg(void *msg, thready__Id from) {
           }
           free(action->loc);
         }
-      }
-      break;
-      
-    case action_malloc:
-      update_bytes_for_set_name(action->root_ptr, (void *)action->set_name,  1);  // +1 --> more bytes allocated
-      free(action->loc);
-      break;
-
-    case action_free:
-      fail_if_already_freed(action->root_ptr, action->loc);
-      update_bytes_for_set_name(action->root_ptr, (void *)action->set_name, -1);  // -1 --> less bytes allocated
-      {
-        Prefix *prefix = (Prefix *)action->root_ptr - 1;
-        map__key_value *pair = map__find(freed_from_locs, action->loc);
-        if (pair == NULL) {
-          pair = map__set(freed_from_locs, action->loc, NULL);
-          // action->loc is now owned by freed_from_locs.
-        } else {
-          free(action->loc);
-        }
-        prefix->freed_by = pair->key;
       }
       break;
       
@@ -347,13 +349,9 @@ static void *post_alloc(Prefix *prefix, size_t size, const char *set_name, char 
   prefix->set_name  = set_name;
   
   void *ptr = (char *)prefix + sizeof(Prefix);
-  
-  Action *action = new_action {
-    .action   = action_malloc,
-    .root_ptr = ptr,
-    .set_name = set_name,
-    .loc      = loc};
-  send_action(action);
+
+  update_bytes_for_set_name(ptr, set_name, 1);  // 1 --> alloc (vs dealloc)
+  free(loc);
   
   return ptr;
 }
@@ -572,13 +570,24 @@ char *dbgcheck__strdup_(const char *src, const char *set_name, const char *file,
 
 void dbgcheck__free_(void *ptr, const char *set_name, const char *file, int line) {
   char *loc = check_set_name(ptr, set_name, file, line);
-  Action *action = new_action {
-    .action = action_free,
-    .root_ptr = ptr,
-    .set_name = set_name,
-    .loc = loc
-  };
-  send_action(action);
+
+  fail_if_already_freed(ptr, loc);
+  update_bytes_for_set_name(ptr, (void *)set_name, -1);  // -1 --> dealloc (vs alloc)
+
+  Prefix *prefix = (Prefix *)ptr - 1;
+
+  pthread_once(&freed_from_init_once, init_freed_from_locs);
+  pthread_mutex_lock(&freed_from_lock);
+  map__key_value *pair = map__find(freed_from_locs, loc);
+  if (pair == NULL) {
+    pair = map__set(freed_from_locs, loc, NULL);
+    // loc is now owned by freed_from_locs.
+  } else {
+    free(loc);
+  }
+  pthread_mutex_unlock(&freed_from_lock);
+
+  prefix->freed_by = pair->key;
 }
 
 void dbgcheck__fail_if_(int cond, const char *file, int line, const char *fmt, ...) {
@@ -596,6 +605,20 @@ void dbgcheck__warn_if_(int cond, const char *file, int line, const char *fmt, .
   va_start(args, fmt);
   print_msg("dbgcheck warning", file, line, fmt, args);
   va_end(args);
+}
+
+long dbgcheck__bytes_used_by_set_name(const char *set_name) {
+  pthread_once(&bytes_per_name_init_once, init_bytes_per_name);
+  pthread_mutex_lock(&bytes_per_name_lock);
+  map__key_value *pair = map__find(bytes_per_set_name, (void *)set_name);
+  pthread_mutex_unlock(&bytes_per_name_lock);
+  return pair ? (long)pair->value : 0;
+}
+
+#else
+
+long dbgcheck__bytes_used_by_set_name(const char *set_name) {
+  return 0;
 }
 
 #endif
