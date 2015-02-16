@@ -20,10 +20,12 @@ cstructs_obj = out/array.o out/map.o out/list.o
 
 includes = -I.
 
+universal_flags = $(includes) -std=c99 -Ddbgcheck_on
+
 ifeq ($(shell uname -s), Darwin)
-	cflags = $(includes) -std=c99
+	cflags = $(universal_flags)
 else
-	cflags = $(includes) -std=c99 -D _GNU_SOURCE
+	cflags = $(universal_flags) -D _GNU_SOURCE
 endif
 cc = gcc $(cflags)
 

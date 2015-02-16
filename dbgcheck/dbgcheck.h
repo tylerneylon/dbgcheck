@@ -4,17 +4,23 @@
 //
 // Sanity checks for threads, pointers, and general boolean conditions.
 //
-// Turn all checks off for production by making sure the dbgcheck_on macro
-// is left undefined. Otherwise these checks will slow things down.
-// 
+// This module adds zero functionality by default. Define the dbgcheck_on
+// macro before including this header file to turn it on. The module can
+// be turned on and off on a per-file basis.
+//
+// Usage example:
+//
+// #define dbgcheck_on
+// #include "dbgcheck.h"
+//
+// // Then use things like dbgcheck__malloc instead of malloc, etc.
+//
 
 #pragma once
 
 
 ////////////////////////////////////////////////////////////////////////////////
 // Preprocessor controls - e.g. turn dbgcheck on or off.
-
-#define dbgcheck_on
 
 // TODO Check that this flag is obeyed, both on and off:
 #define dbgcheck_die_on_failure
