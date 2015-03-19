@@ -29,7 +29,7 @@ When `dbgcheck` finds an error, it reports the specific file and line where that
 If used correctly, this will be the exact location in your code where something has first
 gone wrong. (I say "if used correctly" because if you only wrap some of your critical calls, and
 the error is in an unwrapped call, then `dbgcheck` cannot detect that error.)
-In addition most (but currently not all) error detection is synchronous so that breakpoints can
+In addition, most (but currently not all) error detection is synchronous so that breakpoints can
 be placed within `dbgcheck.c` to provide a way to either print a stack trace or use an
 interactive debugger to gain insight into the error.
 
@@ -49,8 +49,8 @@ possible errors like so:
 * copying a too-large block to a given destination, or
 * using too much memory.
 
-*(Some low-level programs may also run into problems with *aliasing*, where a copy operation has been
-performed in an incorrect order causing a loss of data. From our byte-operation perspective, an
+*(Some low-level programs may also run into problems with **aliasing**, where a copy operation has
+been performed in an incorrect order causing a loss of data. From our byte-operation perspective, an
 aliasing error is not considered a low-level memory management problem.
 We also consider `NULL` pointers to be "not a pointer" for this categorization; `dbgcheck` can
 help notice if a `NULL` value is about to be dereferenced, although most systems will already
