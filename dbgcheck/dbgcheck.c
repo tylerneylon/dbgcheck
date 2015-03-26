@@ -364,6 +364,10 @@ static void *post_alloc(Prefix *prefix, size_t size, const char *set_name, char 
 // memory before knowing it was fully allocated.
 static char *check_set_name(void *ptr, const char *set_name, const char *file, int line) {
   char *loc = new_loc(file, line);
+  if (ptr == NULL) {
+    failure("Expected non-NULL pointer at %s.\n Checked set name '%s'.\n",
+            loc, set_name);
+  }
   Prefix *prefix = (Prefix *)ptr - 1;
   if (strcmp(set_name, prefix->set_name) != 0) {
     failure("ptr set name mismatch at %s.\n"
