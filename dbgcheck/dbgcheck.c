@@ -245,10 +245,12 @@ static void free_lock_info(void *lock_info_vp, void *context) {
 }
 
 // This function expects lock_info_lock to be locked before it's called.
-static void ensure_graph_edge_exists(const char *to, char *loc) {
+static void ensure_graph_edges_exist(const char *to, char *loc, pthread_t thread) {
   pthread_mutex_lock(&mutex_graph_lock);
   map__for(pair, lock_info_of_mutex) {
-    const char *from = ((LockInfo *)pair->value)->name;
+    LockInfo *lock_info = (LockInfo *)pair->value;
+    if (lock_info->locking_thread != thread) { continue; }
+    const char *from = lock_info->name;
     if (from == NULL) {
       failure("consistently use/don't use named_lock interface: %s vs %s",
               ((LockInfo *)pair->value)->locking_loc, loc);
@@ -261,7 +263,6 @@ static void ensure_graph_edge_exists(const char *to, char *loc) {
       map__set(mutex_graph, edge_name, NULL);
     }
   }
-  
   pthread_mutex_unlock(&mutex_graph_lock);
 }
 
@@ -325,7 +326,7 @@ static void handle_msg(void *msg, thready__Id from) {
           // Now we are in a deadlocked state :(
         }
         if (action->name) {
-          ensure_graph_edge_exists(action->name, action->loc);
+          ensure_graph_edges_exist(action->name, action->loc, action->thread);
         }
         // action->loc will be sent to and owned by action_did_lock.
         pthread_mutex_unlock(&lock_info_lock);
