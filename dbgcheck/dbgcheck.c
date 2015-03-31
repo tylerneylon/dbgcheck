@@ -25,8 +25,10 @@
 #ifdef _WIN32
 #define vsnprintf(s, n, fmt, args) vsnprintf_s(s, n, _TRUNCATE, fmt, args)
 #define snprintf(s, n, fmt, ...) _snprintf_s(s, n, _TRUNCATE, fmt, __VA_ARGS__)
+#define pathsep '\\'
 #else
 #define OutputDebugString(s) printf("%s", s)
+#define pathsep '/'
 #endif
 
 #ifndef true
@@ -57,7 +59,7 @@ typedef struct {
   void *           root_ptr;
   void *           inner_ptr;
   size_t           size;
-  const char *     set_name;  // Expected to live forever; e.g. be a literal.
+  const char *     name;      // Expected to live forever; e.g. be a literal.
   char *           loc;       // When non-NULL, this is owned by this struct.
   pthread_t        thread;
   pthread_mutex_t *mutex;
@@ -81,14 +83,20 @@ static Map thready_id_of_loc;   // Used for and only for same_thread checks.
 // Lock info types and data.
 
 typedef struct {
-  char *    locking_loc;
-  pthread_t locking_thread;
+  char *       locking_loc;
+  pthread_t    locking_thread;
+  const char * name;  // This may be NULL.
 } LockInfo;
 
 static pthread_mutex_t lock_info_lock;  // kinda meta
 
 // This maps `<weak> pthread_mutex_t *` -> `<strong> LockInfo *`.
 static Map lock_info_of_mutex;
+
+// Variables for the mutex directed graph.
+static Map             mutex_graph;  // Used as a set of string keys.
+static pthread_once_t  mutex_graph_init_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t mutex_graph_lock;
 
 // Variables for sync blocks.
 static pthread_once_t sync_blocks_init_once = PTHREAD_ONCE_INIT;
@@ -148,6 +156,19 @@ static int str_hash(void *str_void_ptr) {
 
 static int str_eq(void *str_void_ptr1, void *str_void_ptr2) {
   return !strcmp(str_void_ptr1, str_void_ptr2);
+}
+
+static const char *basename(const char *path) {
+  char *last_slash = strrchr(path, pathsep);
+  return last_slash ? last_slash + 1 : path;
+}
+
+// This may run on any thread, but has protections in place to only
+// be called once ever.
+static void init_mutex_graph() {
+  pthread_mutex_init(&mutex_graph_lock, NULL);
+  mutex_graph = map__new(str_hash, str_eq);
+  // This map is expected to only grow; no keys are ever released.
 }
 
 // This may run on any thread.
@@ -223,6 +244,27 @@ static void free_lock_info(void *lock_info_vp, void *context) {
   free(lock_info);
 }
 
+// This function expects lock_info_lock to be locked before it's called.
+static void ensure_graph_edge_exists(const char *to, char *loc) {
+  pthread_mutex_lock(&mutex_graph_lock);
+  map__for(pair, lock_info_of_mutex) {
+    const char *from = ((LockInfo *)pair->value)->name;
+    if (from == NULL) {
+      failure("consistently use/don't use named_lock interface: %s vs %s",
+              ((LockInfo *)pair->value)->locking_loc, loc);
+    }
+    char *edge_name = (char *)malloc(1048);
+    snprintf(edge_name, 1048, "%s -> %s", basename(from), basename(to));
+    if (map__find(mutex_graph, edge_name)) {
+      free(edge_name);
+    } else {
+      map__set(mutex_graph, edge_name, NULL);
+    }
+  }
+  
+  pthread_mutex_unlock(&mutex_graph_lock);
+}
+
 // Only runs on dbgcheck_thread.
 static void handle_msg(void *msg, thready__Id from) {
   Action *action = (Action *)msg;
@@ -244,6 +286,8 @@ static void handle_msg(void *msg, thready__Id from) {
     pthread_mutex_init(&lock_info_lock, NULL);  // NULL --> default attributes
     lock_info_of_mutex = map__new(hash, eq);
     lock_info_of_mutex->value_releaser = free_lock_info;
+    
+    pthread_once(&mutex_graph_init_once, init_mutex_graph);
     
     is_initialized = true;
   }
@@ -280,6 +324,9 @@ static void handle_msg(void *msg, thready__Id from) {
           failure("lock obtained twice by the same thread at %s\n", action->loc);
           // Now we are in a deadlocked state :(
         }
+        if (action->name) {
+          ensure_graph_edge_exists(action->name, action->loc);
+        }
         // action->loc will be sent to and owned by action_did_lock.
         pthread_mutex_unlock(&lock_info_lock);
       }
@@ -289,8 +336,9 @@ static void handle_msg(void *msg, thready__Id from) {
       {
         pthread_mutex_lock(&lock_info_lock);
         LockInfo *lock_info = malloc(sizeof(LockInfo));
-        lock_info->locking_loc = action->loc;  // lock_info now owns loc.
+        lock_info->locking_loc    = action->loc;  // lock_info now owns loc.
         lock_info->locking_thread = action->thread;
+        lock_info->name           = action->name;  // Expected to be eternal.
         map__set(lock_info_of_mutex, action->mutex, lock_info);
         pthread_mutex_unlock(&lock_info_lock);
       }
@@ -476,6 +524,7 @@ void dbgcheck__lock_(pthread_mutex_t *mutex, const char *file, int line) {
   char *loc = new_loc(file, line);
   Action *action = new_action {
     .action = action_will_lock,
+    .name   = NULL,
     .loc    = loc,
     .thread = pthread_self(),
     .mutex  = mutex
@@ -501,6 +550,28 @@ void dbgcheck__unlock_(pthread_mutex_t *mutex, const char *file, int line) {
   };
   send_action(action);
   pthread_mutex_unlock(mutex);
+}
+
+void  dbgcheck__named_lock_(pthread_mutex_t *mutex, const char *mutex_name, const char *file, int line) {
+  // TODO Factor out redundancy with dbgcheck__lock_.
+  char *loc = new_loc(file, line);
+  Action *action = new_action {
+    .action = action_will_lock,
+    .name   = mutex_name,
+    .loc    = loc,
+    .thread = pthread_self(),
+    .mutex  = mutex
+  };
+  send_action(action);
+  pthread_mutex_lock(mutex);
+  action = new_action {
+    .action = action_did_lock,
+    .name   = mutex_name,
+    .loc    = loc,
+    .thread = pthread_self(),
+    .mutex  = mutex
+  };
+  send_action(action);
 }
 
 void dbgcheck__ptr_(void *ptr, const char *set_name, const char *file, int line) {
@@ -619,10 +690,41 @@ long dbgcheck__bytes_used_by_set_name(const char *set_name) {
   return pair ? (long)pair->value : 0;
 }
 
+char *dbgcheck__get_lock_graph_str() {
+  
+  pthread_mutex_lock(&mutex_graph_lock);
+  
+  // First pass: determine the size of the string.
+  size_t bytes_needed = 0;
+  map__for(pair, mutex_graph) {
+    // The +4 here is for two spaces + a newline, which may be 2 chars on win.
+    bytes_needed += (strlen((char *)pair->key) + 4);
+  }
+  bytes_needed++;  // Make room for the final NULL.
+  
+  // Second pass: fill in the string.
+  char * full_str   = (char *)malloc(bytes_needed);
+  char * tail       = full_str;
+  size_t bytes_left = bytes_needed;
+  map__for(pair, mutex_graph) {
+    int bytes_added = snprintf(tail, bytes_left, "  %s\n", (char *)pair->key);
+    tail += bytes_added;
+    bytes_left -= bytes_added;
+  }
+  
+  pthread_mutex_unlock(&mutex_graph_lock);
+  
+  return full_str;
+}
+
 #else
 
 long dbgcheck__bytes_used_by_set_name(const char *set_name) {
   return 0;
+}
+
+char *dbgcheck__get_lock_graph_str() {
+ return "";
 }
 
 #endif

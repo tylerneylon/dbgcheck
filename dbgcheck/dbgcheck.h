@@ -64,6 +64,14 @@
 #define dbgcheck__unlock(mutex) \
         dbgcheck__unlock_(mutex, __FILE__, __LINE__)
 
+// This function performs the same functionality as the above lock one,
+// with the addition of building a directed graph of lock nesting orders. It's
+// a "named" lock in that it expects to be called consistently with a single
+// mutex variable owned within a single file.
+
+#define dbgcheck__named_lock(mutex_var) \
+        dbgcheck__named_lock_(&mutex_var, __FILE__ ":" #mutex_var, __FILE__, __LINE__)
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Memory safety.
@@ -123,6 +131,12 @@
 
 long    dbgcheck__bytes_used_by_set_name(const char *set_name);
 
+// Returns a string encoding the directed graph structure of the nested mutex
+// lock behavior seen by dbgcheck. This is only generated for locks seen by
+// dbgcheck via calls to dbgcheck__named_lock. The returned string is
+// dynamically allocated, and owned by the caller.
+char *dbgcheck__get_lock_graph_str();
+
 // Publicly-visible functions that are meant to only be called by using the
 // above macros.
 
@@ -133,6 +147,8 @@ void  dbgcheck__in_sync_block_(const char *name, const char *file, int line);
 
 void  dbgcheck__lock_(pthread_mutex_t *mutex, const char *file, int line);
 void  dbgcheck__unlock_(pthread_mutex_t *mutex, const char *file, int line);
+
+void  dbgcheck__named_lock_(pthread_mutex_t *mutex, const char *mutex_name, const char *file, int line);
 
 void *dbgcheck__malloc_(size_t size, const char *set_name, const char *file, int line);
 void *dbgcheck__calloc_(size_t size, const char *set_name, const char *file, int line);
@@ -161,6 +177,8 @@ void  dbgcheck__warn_if_(int cond, const char *file, int line, const char *fmt, 
 #define dbgcheck__lock_(mutex, file, line) pthread_mutex_lock(mutex)
 #define dbgcheck__unlock(mutex) pthread_mutex_unlock(mutex)
 #define dbgcheck__unlock_(mutex, file, line) pthread_mutex_unlock(mutex)
+#define dbgcheck__named_lock(mutex_var) pthread_mutex_lock(&mutex_var)
+#define dbgcheck__named_lock_(mutex, m_name, file, line) pthread_mutex_lock(mutex)
 
 #define dbgcheck__malloc(size, set_name) malloc(size)
 #define dbgcheck__calloc(size, set_name) calloc(1, size)
