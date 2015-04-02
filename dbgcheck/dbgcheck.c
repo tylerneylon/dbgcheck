@@ -98,6 +98,11 @@ static Map             mutex_graph;  // Used as a set of string keys.
 static pthread_once_t  mutex_graph_init_once = PTHREAD_ONCE_INIT;
 static pthread_mutex_t mutex_graph_lock;
 
+// Variables for the banned lock orders.
+static Map             banned_edges;
+static pthread_once_t  banned_edges_init_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t banned_edges_lock;
+
 // Variables for sync blocks.
 static pthread_once_t sync_blocks_init_once = PTHREAD_ONCE_INIT;
 static pthread_mutex_t sync_blocks_lock;
@@ -167,8 +172,16 @@ static const char *basename(const char *path) {
 // be called once ever.
 static void init_mutex_graph() {
   pthread_mutex_init(&mutex_graph_lock, NULL);
-  mutex_graph = map__new(str_hash, str_eq);
   // This map is expected to only grow; no keys are ever released.
+  mutex_graph = map__new(str_hash, str_eq);
+}
+
+// This may run on any thread, but has protections in place to only
+// be called once ever.
+static void init_banned_edges() {
+  pthread_mutex_init(&banned_edges_lock, NULL);
+  // This map is expected to only grow; no keys are ever released.
+  banned_edges = map__new(str_hash, str_eq);
 }
 
 // This may run on any thread.
@@ -262,6 +275,16 @@ static void ensure_graph_edges_exist(const char *to, char *loc, pthread_t thread
     } else {
       map__set(mutex_graph, edge_name, NULL);
     }
+        
+    // This check is doing the main work for banned edges set up by
+    // dbgcheck__dont_lock_x_when_y_locked.
+    pthread_mutex_lock(&banned_edges_lock);
+    if (map__find(banned_edges, edge_name)) {
+      failure("Disallowed lock ordering at %s.\nThese locks were locked in "
+              "this disallowed order on the same thread: %s\n",
+              loc, edge_name);
+    }
+    pthread_mutex_unlock(&banned_edges_lock);
   }
   pthread_mutex_unlock(&mutex_graph_lock);
 }
@@ -288,7 +311,8 @@ static void handle_msg(void *msg, thready__Id from) {
     lock_info_of_mutex = map__new(hash, eq);
     lock_info_of_mutex->value_releaser = free_lock_info;
     
-    pthread_once(&mutex_graph_init_once, init_mutex_graph);
+    pthread_once( &mutex_graph_init_once, init_mutex_graph);
+    pthread_once(&banned_edges_init_once, init_banned_edges);
     
     is_initialized = true;
   }
@@ -574,6 +598,32 @@ void  dbgcheck__named_lock_(pthread_mutex_t *mutex, const char *mutex_name, cons
   };
   send_action(action);
 }
+
+// TODO Right now the mutex graph uses string keys based on filename and
+//      variable name. This is useful for user-facing data, but is bad as
+//      a canonical handle to the mutexes themselves since we have access to
+//      better data = the mutex pointer itself. Fix this by internally tracking
+//      the graph based on mutex pointer values, but providing user-facing
+//      graph data in terms of the friendly strings. For mutex pointers with
+//      multiple names, it's good enough to use the first-seen string name as
+//      the canonical one.
+
+void  dbgcheck__dont_lock_x_when_y_locked_(const char *mutex1_name,
+                                           const char *mutex2_name) {
+  pthread_once(&banned_edges_init_once, init_banned_edges);
+  
+  pthread_mutex_lock(&banned_edges_lock);
+  char *edge_name = (char *)malloc(1048);
+  snprintf(edge_name, 1048, "%s -> %s",
+           basename(mutex2_name), basename(mutex1_name));
+  if (map__find(banned_edges, edge_name)) {
+    free(edge_name);
+  } else {
+    map__set(banned_edges, edge_name, NULL);
+  }
+  pthread_mutex_unlock(&banned_edges_lock);
+}
+
 
 void dbgcheck__ptr_(void *ptr, const char *set_name, const char *file, int line) {
   char *loc = check_set_name(ptr, set_name, file, line);
