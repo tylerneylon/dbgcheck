@@ -349,6 +349,8 @@ static void handle_msg(void *msg, thready__Id from) {
           failure("lock obtained twice by the same thread at %s\n", action->loc);
           // Now we are in a deadlocked state :(
         }
+        // TODO This slows things down considerably. Make it easy to toggle this
+        //      particular check on/off independently at compile-time.
         if (action->name) {
           ensure_graph_edges_exist(action->name, action->loc, action->thread);
         }
