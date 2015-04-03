@@ -610,8 +610,8 @@ void  dbgcheck__named_lock_(pthread_mutex_t *mutex, const char *mutex_name, cons
 //      multiple names, it's good enough to use the first-seen string name as
 //      the canonical one.
 
-void  dbgcheck__dont_lock_x_when_y_locked_(const char *mutex1_name,
-                                           const char *mutex2_name) {
+void dbgcheck__dont_lock_x_when_y_locked_(const char *mutex1_name,
+                                          const char *mutex2_name) {
   pthread_once(&banned_edges_init_once, init_banned_edges);
   
   pthread_mutex_lock(&banned_edges_lock);
@@ -625,7 +625,6 @@ void  dbgcheck__dont_lock_x_when_y_locked_(const char *mutex1_name,
   }
   pthread_mutex_unlock(&banned_edges_lock);
 }
-
 
 void dbgcheck__ptr_(void *ptr, const char *set_name, const char *file, int line) {
   char *loc = check_set_name(ptr, set_name, file, line);
