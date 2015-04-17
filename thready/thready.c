@@ -145,7 +145,7 @@ thready__Id thready__create_once(thready__Receiver receiver) {
   
   // Our focus here is to return quickly if the thread already exists.
   pthread_rwlock_rdlock(&once_threads_lock);
-  map__key_value *pair = map__find(once_threads, receiver);
+  map__key_value *pair = map__get(once_threads, receiver);
   pthread_rwlock_rdunlock(&once_threads_lock);
   
   if (pair) return (thready__Id)pair->value;
@@ -153,7 +153,7 @@ thready__Id thready__create_once(thready__Receiver receiver) {
   // At this point someone has to initialize the thread. It might as well be me.
   pthread_rwlock_wrlock(&once_threads_lock);
   // In rare cases, another thread may have initialized this receiver by now.
-  pair = map__find(once_threads, receiver);
+  pair = map__get(once_threads, receiver);
   thready__Id thread;
   if (pair) {
     thread = (thready__Id)pair->value;
@@ -221,7 +221,7 @@ thready__Id thready__my_id() {
   pthread_once(&init_control, init);
 
   pthread_rwlock_rdlock(&threads_lock);
-  map__key_value *pair = map__find(threads, (void *)(intptr_t)pthread_self());
+  map__key_value *pair = map__get(threads, (void *)(intptr_t)pthread_self());
   pthread_rwlock_rdunlock(&threads_lock);
 
   if (pair == NULL) {

@@ -214,7 +214,7 @@ static void update_bytes_for_set_name(void *root_ptr, const char *set_name, int 
 
   pthread_once(&bytes_per_name_init_once, init_bytes_per_name);
   pthread_mutex_lock(&bytes_per_name_lock);
-  map__key_value *pair = map__find(bytes_per_set_name, set_name_vp);
+  map__key_value *pair = map__get(bytes_per_set_name, set_name_vp);
   if (pair == NULL) {
     pair = map__set(bytes_per_set_name, set_name_vp, 0L);
   }
@@ -270,7 +270,7 @@ static void ensure_graph_edges_exist(const char *to, char *loc, pthread_t thread
     }
     char *edge_name = (char *)malloc(1048);
     snprintf(edge_name, 1048, "%s -> %s", basename(from), basename(to));
-    if (map__find(mutex_graph, edge_name)) {
+    if (map__get(mutex_graph, edge_name)) {
       free(edge_name);
     } else {
       map__set(mutex_graph, edge_name, NULL);
@@ -279,7 +279,7 @@ static void ensure_graph_edges_exist(const char *to, char *loc, pthread_t thread
     // This check is doing the main work for banned edges set up by
     // dbgcheck__dont_lock_x_when_y_locked.
     pthread_mutex_lock(&banned_edges_lock);
-    if (map__find(banned_edges, edge_name)) {
+    if (map__get(banned_edges, edge_name)) {
       failure("Disallowed lock ordering at %s.\nThese locks were locked in "
               "this disallowed order on the same thread: %s\n",
               loc, edge_name);
@@ -325,7 +325,7 @@ static void handle_msg(void *msg, thready__Id from) {
         // defined; so if this code executes, thready_id_of_loc is only
         // accessed from a single thread. Hence we do not need locks.
         
-        map__key_value *pair = map__find(thready_id_of_loc, action->loc);
+        map__key_value *pair = map__get(thready_id_of_loc, action->loc);
         if (pair == NULL) {
           map__set(thready_id_of_loc, action->loc, from);
           // The map now owns action->loc.
@@ -341,7 +341,7 @@ static void handle_msg(void *msg, thready__Id from) {
     case action_will_lock:
       {
         pthread_mutex_lock(&lock_info_lock);
-        map__key_value *pair = map__find(lock_info_of_mutex, action->mutex);
+        map__key_value *pair = map__get(lock_info_of_mutex, action->mutex);
         // In correct operation, the lock is held by another thread, or not
         // held at all.
         if (pair && ((LockInfo *)(pair->value))->locking_thread == action->thread) {
@@ -374,7 +374,7 @@ static void handle_msg(void *msg, thready__Id from) {
     case action_unlock:
       {
         pthread_mutex_lock(&lock_info_lock);
-        map__key_value *pair = map__find(lock_info_of_mutex, action->mutex);
+        map__key_value *pair = map__get(lock_info_of_mutex, action->mutex);
         // In correct operation, the lock is held by the unlocking thread.
         if (!pair || ((LockInfo *)(pair->value))->locking_thread != action->thread) {
           failure("unlock attempted when lock is owned by another thread at %s\n",
@@ -478,7 +478,7 @@ void dbgcheck__same_thread_(const char *file, int line) {
   }
   
   thready__Id my_id = thready__my_id();
-  map__key_value *pair = map__find(thready_id_of_loc, loc);
+  map__key_value *pair = map__get(thready_id_of_loc, loc);
   if (pair == NULL) {
     map__set(thready_id_of_loc, loc, my_id);
     // The map now owns action->loc.
@@ -509,7 +509,7 @@ void dbgcheck__start_sync_block_(const char *name, const char *file, int line) {
   pthread_once(&sync_blocks_init_once, init_sync_blocks);
   char *loc = new_loc(file, line);
   pthread_mutex_lock(&sync_blocks_lock);
-  map__key_value *pair = map__find(sync_blocks, (void *)name);
+  map__key_value *pair = map__get(sync_blocks, (void *)name);
   if (pair) {
     failure("overlapping sync block: %s\n"
             "first started at %s / second started at %s\n",
@@ -524,7 +524,7 @@ void dbgcheck__end_sync_block_(const char *name, const char *file, int line) {
   pthread_once(&sync_blocks_init_once, init_sync_blocks);
   char *loc = new_loc(file, line);
   pthread_mutex_lock(&sync_blocks_lock);
-  map__key_value *pair = map__find(sync_blocks, (void *)name);
+  map__key_value *pair = map__get(sync_blocks, (void *)name);
   if (pair) {
     map__unset(sync_blocks, (void *)name);
     free(loc);
@@ -539,7 +539,7 @@ void dbgcheck__in_sync_block_(const char *name, const char *file, int line) {
   pthread_once(&sync_blocks_init_once, init_sync_blocks);
   char *loc = new_loc(file, line);
   pthread_mutex_lock(&sync_blocks_lock);
-  map__key_value *pair = map__find(sync_blocks, (void *)name);
+  map__key_value *pair = map__get(sync_blocks, (void *)name);
   if (pair == NULL) {
     failure("not in sync block as expected: %s\n"
             "expected to be in block at %s.\n", name, loc);
@@ -618,7 +618,7 @@ void dbgcheck__dont_lock_x_when_y_locked_(const char *mutex1_name,
   char *edge_name = (char *)malloc(1048);
   snprintf(edge_name, 1048, "%s -> %s",
            basename(mutex2_name), basename(mutex1_name));
-  if (map__find(banned_edges, edge_name)) {
+  if (map__get(banned_edges, edge_name)) {
     free(edge_name);
   } else {
     map__set(banned_edges, edge_name, NULL);
@@ -705,7 +705,7 @@ void dbgcheck__free_(void *ptr, const char *set_name, const char *file, int line
 
   pthread_once(&freed_from_init_once, init_freed_from_locs);
   pthread_mutex_lock(&freed_from_lock);
-  map__key_value *pair = map__find(freed_from_locs, loc);
+  map__key_value *pair = map__get(freed_from_locs, loc);
   if (pair == NULL) {
     pair = map__set(freed_from_locs, loc, NULL);
     // loc is now owned by freed_from_locs.
@@ -737,7 +737,7 @@ void dbgcheck__warn_if_(int cond, const char *file, int line, const char *fmt, .
 long dbgcheck__bytes_used_by_set_name(const char *set_name) {
   pthread_once(&bytes_per_name_init_once, init_bytes_per_name);
   pthread_mutex_lock(&bytes_per_name_lock);
-  map__key_value *pair = map__find(bytes_per_set_name, (void *)set_name);
+  map__key_value *pair = map__get(bytes_per_set_name, (void *)set_name);
   pthread_mutex_unlock(&bytes_per_name_lock);
   return pair ? (long)pair->value : 0;
 }
