@@ -163,10 +163,12 @@ static int str_eq(void *str_void_ptr1, void *str_void_ptr2) {
   return !strcmp(str_void_ptr1, str_void_ptr2);
 }
 
+#ifndef __linux__
 static const char *basename(const char *path) {
   char *last_slash = strrchr(path, pathsep);
   return last_slash ? last_slash + 1 : path;
 }
+#endif
 
 // This may run on any thread, but has protections in place to only
 // be called once ever.
