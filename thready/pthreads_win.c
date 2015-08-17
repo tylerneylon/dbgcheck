@@ -43,7 +43,8 @@ static void thread_start(void *param) {
   start_fn(arg);
 }
 
-static BOOL CALLBACK init_once(PINIT_ONCE once_control, PVOID param, PVOID *context) {
+static BOOL CALLBACK init_once(PINIT_ONCE once_control,
+                               PVOID param, PVOID *context) {
   void(*init)() = (void(*)())param;  // yikes
   init();
   return TRUE;
@@ -53,7 +54,8 @@ static BOOL CALLBACK init_once(PINIT_ONCE once_control, PVOID param, PVOID *cont
 ///////////////////////////////////////////////////////////////////////////////
 // Thread control.
 
-int pthread_create(pthread_t *thread, void *attr, void *(*start_fn)(void *), void *arg) {
+int pthread_create(pthread_t *thread, void *attr,
+                   void *(*start_fn)(void *), void *arg) {
   StartCall *call = malloc(sizeof(StartCall));
   call->start_fn = start_fn;
   call->arg      = arg;

@@ -208,8 +208,11 @@ static void init_freed_from_locs() {
 // This may run on any thread.
 // sign is expected to be +1 or -1, depending on if the given root_ptr was just
 // allocated or freed.
-static void update_bytes_for_set_name(void *root_ptr, const char *set_name, int sign) {
-  // We define this as most of the uses of set_name below treat it directly as a void *.
+static void update_bytes_for_set_name(void *root_ptr,
+                                      const char *set_name,
+                                      int sign) {
+  // We define this as most of the uses of set_name below treat it directly as a
+  // void *.
   void *set_name_vp = (void *)set_name;
 
   pthread_once(&bytes_per_name_init_once, init_bytes_per_name);
@@ -258,7 +261,9 @@ static void free_lock_info(void *lock_info_vp, void *context) {
 }
 
 // This function expects lock_info_lock to be locked before it's called.
-static void ensure_graph_edges_exist(const char *to, char *loc, pthread_t thread) {
+static void ensure_graph_edges_exist(const char *to,
+                                     char *loc,
+                                     pthread_t thread) {
   pthread_mutex_lock(&mutex_graph_lock);
   map__for(pair, lock_info_of_mutex) {
     LockInfo *lock_info = (LockInfo *)pair->value;
@@ -344,10 +349,13 @@ static void handle_msg(void *msg, thready__Id from) {
         map__key_value *pair = map__get(lock_info_of_mutex, action->mutex);
         // In correct operation, the lock is held by another thread, or not
         // held at all.
-        if (pair && ((LockInfo *)(pair->value))->locking_thread == action->thread) {
-          // TODO Check that failures when die_on_failure is off don't leak!
-          failure("lock obtained twice by the same thread at %s\n", action->loc);
-          // Now we are in a deadlocked state :(
+        if (pair) {
+          if (((LockInfo *)pair->value)->locking_thread == action->thread) {
+            // TODO Check that failures when die_on_failure is off don't leak!
+            failure("lock obtained twice by the same thread at %s\n",
+                     action->loc);
+            // Now we are in a deadlocked state :(
+          }
         }
         // TODO This slows things down considerably. Make it easy to toggle this
         //      particular check on/off independently at compile-time.
@@ -376,9 +384,10 @@ static void handle_msg(void *msg, thready__Id from) {
         pthread_mutex_lock(&lock_info_lock);
         map__key_value *pair = map__get(lock_info_of_mutex, action->mutex);
         // In correct operation, the lock is held by the unlocking thread.
-        if (!pair || ((LockInfo *)(pair->value))->locking_thread != action->thread) {
-          failure("unlock attempted when lock is owned by another thread at %s\n",
-                  action->loc);
+        if (!pair ||
+            ((LockInfo *)pair->value)->locking_thread != action->thread) {
+          failure("unlock attempted when lock is owned by another thread "
+                  "at %s\n", action->loc);
         }
         map__unset(lock_info_of_mutex, action->mutex);
         pthread_mutex_unlock(&lock_info_lock);
@@ -387,7 +396,8 @@ static void handle_msg(void *msg, thready__Id from) {
       break;
 
     default:
-      failure("Internal dbgcheck error! Unexpected action value %d!\n", action->action);
+      failure("Internal dbgcheck error! Unexpected action value %d!\n",
+              action->action);
   }
 
   free(action);
@@ -415,7 +425,10 @@ static char *new_loc(const char *file, int line) {
   *action = (Action)
 
 // This may run outside of dbgcheck_thread.
-static void *post_alloc(Prefix *prefix, size_t size, const char *set_name, char *loc) {
+static void *post_alloc(Prefix *prefix,
+                        size_t size,
+                        const char *set_name,
+                        char *loc) {
   prefix->user_size = size;
   prefix->freed_by  = NULL;
   // We count on set_name being written before the user's dbgcheck-alloc call
@@ -437,7 +450,10 @@ static void *post_alloc(Prefix *prefix, size_t size, const char *set_name, char 
 // error if this check fails, even if it fails while the set name is being set
 // concurrently, because that means the user attempted to do something with the
 // memory before knowing it was fully allocated.
-static char *check_set_name(void *ptr, const char *set_name, const char *file, int line) {
+static char *check_set_name(void *ptr,
+                            const char *set_name,
+                            const char *file,
+                            int line) {
   char *loc = new_loc(file, line);
   if (ptr == NULL) {
     failure("Expected non-NULL pointer at %s.\n Checked set name '%s'.\n",
@@ -453,7 +469,11 @@ static char *check_set_name(void *ptr, const char *set_name, const char *file, i
 }
 
 // This may run outside of dbgcheck_thread.
-static void print_msg(const char *prefix, const char *file, int line, const char *fmt, va_list args) {
+static void print_msg(const char *prefix,
+                      const char *file,
+                      int line,
+                      const char *fmt,
+                      va_list args) {
   char *loc = new_loc(file, line);
   dbg__printf("%s: custom condition failed at %s\n", prefix, loc);
   free(loc);
@@ -579,7 +599,10 @@ void dbgcheck__unlock_(pthread_mutex_t *mutex, const char *file, int line) {
   pthread_mutex_unlock(mutex);
 }
 
-void  dbgcheck__named_lock_(pthread_mutex_t *mutex, const char *mutex_name, const char *file, int line) {
+void dbgcheck__named_lock_(pthread_mutex_t *mutex,
+                           const char *mutex_name,
+                           const char *file,
+                           int line) {
   // TODO Factor out redundancy with dbgcheck__lock_.
   char *loc = new_loc(file, line);
   Action *action = new_action {
@@ -626,13 +649,15 @@ void dbgcheck__dont_lock_x_when_y_locked_(const char *mutex1_name,
   pthread_mutex_unlock(&banned_edges_lock);
 }
 
-void dbgcheck__ptr_(void *ptr, const char *set_name, const char *file, int line) {
+void dbgcheck__ptr_(void *ptr, const char *set_name,
+                    const char *file, int line) {
   char *loc = check_set_name(ptr, set_name, file, line);
   fail_if_already_freed(ptr, loc);
   free(loc);
 }
 
-void dbgcheck__ptr_size_(void *ptr, const char *set_name, size_t size, const char *file, int line) {
+void dbgcheck__ptr_size_(void *ptr, const char *set_name,
+                         size_t size, const char *file, int line) {
   char *loc = check_set_name(ptr, set_name, file, line);
   fail_if_already_freed(ptr, loc);
   Prefix *prefix = (Prefix *)ptr - 1;
@@ -644,7 +669,8 @@ void dbgcheck__ptr_size_(void *ptr, const char *set_name, size_t size, const cha
   free(loc);
 }
 
-void dbgcheck__inner_ptr_(void *inner_ptr, void *root_ptr, const char *set_name, const char *file, int line) {
+void dbgcheck__inner_ptr_(void *inner_ptr, void *root_ptr, const char *set_name,
+                          const char *file, int line) {
   char *loc = check_set_name(root_ptr, set_name, file, line);
   fail_if_already_freed(root_ptr, loc);
   Prefix *prefix = (Prefix *)root_ptr - 1;
@@ -658,7 +684,9 @@ void dbgcheck__inner_ptr_(void *inner_ptr, void *root_ptr, const char *set_name,
   free(loc);
 }
 
-void dbgcheck__inner_ptr_size_(void *inner_ptr, void *root_ptr, const char *set_name, size_t size, const char *file, int line) {
+void dbgcheck__inner_ptr_size_(void *inner_ptr, void *root_ptr,
+                               const char *set_name, size_t size,
+                               const char *file, int line) {
   char *loc = check_set_name(root_ptr, set_name, file, line);
   Prefix *prefix = (Prefix *)root_ptr - 1;
   char *root_end = (char *)root_ptr + prefix->user_size;
@@ -676,17 +704,20 @@ void dbgcheck__inner_ptr_size_(void *inner_ptr, void *root_ptr, const char *set_
   free(loc);
 }
 
-void *dbgcheck__malloc_(size_t size, const char *set_name, const char *file, int line) {
+void *dbgcheck__malloc_(size_t size, const char *set_name,
+                        const char *file, int line) {
   Prefix *prefix = (Prefix *)malloc(size + sizeof(Prefix));
   return post_alloc(prefix, size, set_name, new_loc(file, line));
 }
 
-void *dbgcheck__calloc_(size_t size, const char *set_name, const char *file, int line) {
+void *dbgcheck__calloc_(size_t size, const char *set_name,
+                        const char *file, int line) {
   Prefix *prefix = (Prefix *)calloc(1, size + sizeof(Prefix));
   return post_alloc(prefix, size, set_name, new_loc(file, line));
 }
 
-char *dbgcheck__strdup_(const char *src, const char *set_name, const char *file, int line) {
+char *dbgcheck__strdup_(const char *src, const char *set_name,
+                        const char *file, int line) {
   size_t src_size = strlen(src) + 1;  // + 1 is for the final null.
   Prefix *prefix = (Prefix *)malloc(src_size + sizeof(Prefix));
   char *str_start = post_alloc(prefix, src_size, set_name, new_loc(file, line));
@@ -695,11 +726,14 @@ char *dbgcheck__strdup_(const char *src, const char *set_name, const char *file,
   return str_start;
 }
 
-void dbgcheck__free_(void *ptr, const char *set_name, const char *file, int line) {
+void dbgcheck__free_(void *ptr, const char *set_name,
+                     const char *file, int line) {
   char *loc = check_set_name(ptr, set_name, file, line);
 
   fail_if_already_freed(ptr, loc);
-  update_bytes_for_set_name(ptr, (void *)set_name, -1);  // -1 --> dealloc (vs alloc)
+
+  // -1 here means to dealloc (vs alloc)
+  update_bytes_for_set_name(ptr, (void *)set_name, -1);
 
   Prefix *prefix = (Prefix *)ptr - 1;
 
@@ -717,7 +751,8 @@ void dbgcheck__free_(void *ptr, const char *set_name, const char *file, int line
   prefix->freed_by = pair->key;
 }
 
-void dbgcheck__fail_if_(int cond, const char *file, int line, const char *fmt, ...) {
+void dbgcheck__fail_if_(int cond, const char *file,
+                        int line, const char *fmt, ...) {
   if (!cond) { return; }
   va_list args;
   va_start(args, fmt);
@@ -726,7 +761,8 @@ void dbgcheck__fail_if_(int cond, const char *file, int line, const char *fmt, .
   exit(1);
 }
 
-void dbgcheck__warn_if_(int cond, const char *file, int line, const char *fmt, ...) {
+void dbgcheck__warn_if_(int cond, const char *file,
+                        int line, const char *fmt, ...) {
   if (!cond) { return; }
   va_list args;
   va_start(args, fmt);

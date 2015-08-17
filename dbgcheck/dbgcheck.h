@@ -69,8 +69,9 @@
 // a "named" lock in that it expects to be called consistently with a single
 // mutex variable owned within a single file.
 
-#define dbgcheck__named_lock(mutex_var) \
-        dbgcheck__named_lock_(&mutex_var, __FILE__ ":" #mutex_var, __FILE__, __LINE__)
+#define dbgcheck__named_lock(mutex_var)                            \
+        dbgcheck__named_lock_(&mutex_var, __FILE__ ":" #mutex_var, \
+                              __FILE__, __LINE__)
 
 // Intuition here: you *want* the nesting order mutex1 -> mutex2, meaning that
 // either:
@@ -88,8 +89,8 @@
 
 // This allocates memory blocks that may later be checked with dbgcheck__ptr and
 // friends. Anything allocated with a given set name must be deallocated with
-// dbgcheck__free using the same set name. Set names are arbitrary strings
-// chosen by the user; they are assumed to live indefinitely. Literals are great.
+// dbgcheck__free using the same set name. Set names are arbitrary strings the
+// user chooses; they are assumed to live indefinitely. Literals are great.
 #define dbgcheck__malloc(size, set_name) \
         dbgcheck__malloc_(size, set_name, __FILE__, __LINE__)
 
@@ -126,8 +127,9 @@
 #define dbgcheck__inner_ptr(inner_ptr, root_ptr, set_name) \
         dbgcheck__inner_ptr_(inner_ptr, root_ptr, set_name, __FILE__, __LINE__)
 
-#define dbgcheck__inner_ptr_size(inner_ptr, root_ptr, set_name, size) \
-        dbgcheck__inner_ptr_size_(inner_ptr, root_ptr, set_name, size, __FILE__, __LINE__)
+#define dbgcheck__inner_ptr_size(inner_ptr, root_ptr, set_name, size)  \
+        dbgcheck__inner_ptr_size_(inner_ptr, root_ptr, set_name, size, \
+                                  __FILE__, __LINE__)
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -158,22 +160,34 @@ void  dbgcheck__in_sync_block_(const char *name, const char *file, int line);
 void  dbgcheck__lock_(pthread_mutex_t *mutex, const char *file, int line);
 void  dbgcheck__unlock_(pthread_mutex_t *mutex, const char *file, int line);
 
-void  dbgcheck__named_lock_(pthread_mutex_t *mutex, const char *mutex_name, const char *file, int line);
+void  dbgcheck__named_lock_(pthread_mutex_t *mutex, const char *mutex_name,
+                            const char *file, int line);
 void  dbgcheck__dont_lock_x_when_y_locked_(const char *mutex1_name,
                                            const char *mutex2_name);
 
-void *dbgcheck__malloc_(size_t size, const char *set_name, const char *file, int line);
-void *dbgcheck__calloc_(size_t size, const char *set_name, const char *file, int line);
-char *dbgcheck__strdup_(const char *src, const char *set_name, const char *file, int line);
+void *dbgcheck__malloc_(size_t size, const char *set_name,
+                        const char *file, int line);
+void *dbgcheck__calloc_(size_t size, const char *set_name,
+                        const char *file, int line);
+char *dbgcheck__strdup_(const char *src, const char *set_name,
+                        const char *file, int line);
 
-void  dbgcheck__free_(void *ptr, const char *set_name, const char *file, int line);
-void  dbgcheck__ptr_(void *root_ptr, const char *set_name, const char *file, int line);
-void  dbgcheck__ptr_size_(void *ptr, const char *set_name, size_t size, const char *file, int line);
-void  dbgcheck__inner_ptr_(void *inner_ptr, void *root_ptr, const char *set_name, const char *file, int line);
-void  dbgcheck__inner_ptr_size_(void *inner_ptr, void *root_ptr, const char *set_name, size_t size, const char *file, int line);
+void  dbgcheck__free_(void *ptr, const char *set_name,
+                      const char *file, int line);
+void  dbgcheck__ptr_(void *root_ptr, const char *set_name,
+                     const char *file, int line);
+void  dbgcheck__ptr_size_(void *ptr, const char *set_name,
+                          size_t size, const char *file, int line);
+void  dbgcheck__inner_ptr_(void *inner_ptr, void *root_ptr,
+                           const char *set_name, const char *file, int line);
+void  dbgcheck__inner_ptr_size_(void *inner_ptr, void *root_ptr,
+                                const char *set_name, size_t size,
+                                const char *file, int line);
 
-void  dbgcheck__fail_if_(int cond, const char *file, int line, const char *fmt, ...);
-void  dbgcheck__warn_if_(int cond, const char *file, int line, const char *fmt, ...);
+void  dbgcheck__fail_if_(int cond, const char *file,
+                         int line, const char *fmt, ...);
+void  dbgcheck__warn_if_(int cond, const char *file,
+                         int line, const char *fmt, ...);
 
 #else
 
@@ -190,7 +204,8 @@ void  dbgcheck__warn_if_(int cond, const char *file, int line, const char *fmt, 
 #define dbgcheck__unlock(mutex) pthread_mutex_unlock(mutex)
 #define dbgcheck__unlock_(mutex, file, line) pthread_mutex_unlock(mutex)
 #define dbgcheck__named_lock(mutex_var) pthread_mutex_lock(&mutex_var)
-#define dbgcheck__named_lock_(mutex, m_name, file, line) pthread_mutex_lock(mutex)
+#define dbgcheck__named_lock_(mutex, m_name, file, line) \
+    pthread_mutex_lock(mutex)
 #define dbgcheck__dont_lock_x_when_y_locked(mutex_var1, mutex_var2)
 #define dbgcheck__dont_lock_x_when_y_locked_(m1_name, m2_name)
 

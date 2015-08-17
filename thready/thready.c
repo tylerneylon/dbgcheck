@@ -18,7 +18,9 @@
 // This may be useful for debugging.
 #if 0
 #include "../test/winutil.h"
-#define prline printf("%s:%d(%s) (tid=%p)\n", basename(__FILE__), __LINE__, __FUNCTION__, pthread_self())
+#define prline \
+    printf("%s:%d(%s) (tid=%p)\n", \
+           basename(__FILE__), __LINE__, __FUNCTION__, pthread_self())
 #endif
 
 
@@ -99,7 +101,8 @@ static void send_out_first_msg(Thread *thread, thready__Receiver receiver) {
   // Read out the first message and remove it from the inbox.
   pthread_mutex_lock(&thread->inbox_mutex);
   Envelope *orig_envelope = array__item_ptr(thread->inbox, 0);
-  Envelope envelope = *orig_envelope;  // Make a copy as we're about to delete the original.
+  // Make a copy as we're about to delete the original.
+  Envelope envelope = *orig_envelope;
   array__remove_item(thread->inbox, orig_envelope);
   pthread_mutex_unlock(&thread->inbox_mutex);
 
@@ -118,7 +121,8 @@ const thready__Id thready__success = (thready__Id) 0x1;
 thready__Id thready__create(thready__Receiver receiver) {
   pthread_once(&init_control, init);
 
-  // Write-lock `threads` now so the new thread doesn't read from it before we write to it.
+  // Write-lock `threads` now so the new thread doesn't read from it before
+  // we write to it.
   pthread_rwlock_wrlock(&threads_lock);
 
   pthread_t pthread;
@@ -133,7 +137,9 @@ thready__Id thready__create(thready__Receiver receiver) {
 
   // Allocate and set the new thread's inbox.
   Thread *thread = new_thread_struct();
-  map__set(threads, (void *)(intptr_t)pthread, thread);  // threads[pthread] = thread
+
+  // threads[pthread] = thread
+  map__set(threads, (void *)(intptr_t)pthread, thread);
 
   pthread_rwlock_wrunlock(&threads_lock);
 
@@ -210,7 +216,8 @@ thready__Id thready__send(void *msg, thready__Id to_id) {
 
   pthread_mutex_lock(&to->inbox_mutex);
   array__new_val(to->inbox, Envelope) = (Envelope){ .msg = msg, .from = from };
-  // If the inbox used to be empty, let any possibly-waiting threads know it has a message.
+  // If the inbox used to be empty, let any possibly-waiting threads know it
+  // has a message.
   if (to->inbox->count == 1) pthread_cond_signal(&to->inbox_signal);
   pthread_mutex_unlock(&to->inbox_mutex);
 

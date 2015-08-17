@@ -27,7 +27,8 @@ int pthread_mutex_is_locked(pthread_mutex_t *m);
 
 typedef DWORD pthread_t;
 
-int pthread_create(pthread_t *thread, void *attr, void *(*start_fn)(void *), void *arg);
+int pthread_create(pthread_t *thread, void *attr,
+                   void *(*start_fn)(void *), void *arg);
 void pthread_exit(void *exit_value);
 #define pthread_self GetCurrentThreadId
 
